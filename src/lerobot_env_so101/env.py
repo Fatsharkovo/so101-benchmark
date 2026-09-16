@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import xml.etree.ElementTree as ET
 
 import gymnasium as gym
 import numpy as np
@@ -9,6 +10,7 @@ from gymnasium import spaces
 from .config import JOINTS, SimConfig
 from .scene import make_xml
 from .tasks.base import make_task
+from .xml_scene import derive_spec, read_xml, scene_path
 
 
 class SO101Env(gym.Env):
@@ -56,7 +58,21 @@ class SO101Env(gym.Env):
         self.mj = mujoco
         self.close()
         self.scene_spec = self.task_impl.scene()
-        self.model_xml, self.sampled = make_xml(self.scene_spec, self.cfg, seed)
+        if options and options.get("scene_xml"):
+            root = read_xml(options["scene_xml"])
+            derive_spec(root, self.scene_spec)
+            self.model_xml = ET.tostring(root, encoding="unicode")
+            self.sampled = {
+                "seed": seed,
+                "objects": {o.name: {"size": o.size} for o in self.scene_spec.objects},
+                "groups": {},
+            }
+            if self.scene_spec.plate_xy is not None:
+                self.sampled["plate_xy"] = self.scene_spec.plate_xy
+        else:
+            self.model_xml, self.sampled = make_xml(
+                self.scene_spec, self.cfg, seed, scene_path(self.task_impl.definition), self.task_impl.params
+            )
         self.model = mujoco.MjModel.from_xml_string(self.model_xml)
         self.data = mujoco.MjData(self.model)
         self.joint_ids = np.array([self.model.joint(n).id for n in JOINTS])
@@ -85,7 +101,21 @@ class SO101Env(gym.Env):
         self.step_index = 0
         self.done = False
         self.task_impl.reset(self)
+        self._state_kind = mujoco.mjtState.mjSTATE_INTEGRATION
+        self._initial_state = np.empty(mujoco.mj_stateSize(self.model, self._state_kind))
+        mujoco.mj_getState(self.model, self.data, self._initial_state, self._state_kind)
         return self.observe(), {"is_success": False, "sampled": self.sampled, "task": self.task}
+
+    def restore_initial(self) -> dict:
+        """Restore the full settled initial state without replacing model or renderers."""
+        self.mj.mj_resetData(self.model, self.data)
+        self.mj.mj_setState(self.model, self.data, self._initial_state, self._state_kind)
+        self.mj.mj_forward(self.model, self.data)
+        self.applied_action = self.from_sim(self.data.ctrl[self.actuator_ids])
+        self.step_index = 0
+        self.done = False
+        self.task_impl.reset(self)
+        return self.observe()
 
     def to_sim(self, action: np.ndarray) -> np.ndarray:
         action = np.asarray(action, dtype=float)
@@ -102,7 +132,7 @@ class SO101Env(gym.Env):
         a[5] = np.clip((q[5] - self.limits[5, 0]) / np.ptp(self.limits[5]) * 100, 0, 100)
         return a
 
-    def step(self, action: np.ndarray) -> tuple[dict, float, bool, bool, dict]:
+    def step(self, action: np.ndarray, *, trial: bool = False) -> tuple[dict, float, bool, bool, dict]:
         if self.data is None or self.done:
             raise RuntimeError("Call reset before stepping a new episode")
         q = self.to_sim(action)
@@ -112,6 +142,8 @@ class SO101Env(gym.Env):
             self.mj.mj_step(self.model, self.data)
         if not np.isfinite(self.data.qpos).all() or not np.isfinite(self.data.qvel).all():
             raise RuntimeError("Non-finite simulation state")
+        if trial:
+            return self.observe(), 0.0, False, False, {"is_success": False}
         self.step_index += 1
         status = self.task_impl.evaluate(self)
         terminated = bool(status.success or status.failure)
@@ -161,16 +193,17 @@ class SO101Env(gym.Env):
         if self.scene_spec.plate_xy is None:
             return False
         corners = self.object_corners(name)
-        center = np.array(self.sampled["plate_xy"])
+        plate = self.data.body("plate")
+        rotation = plate.xmat.reshape(3, 3)
+        corners = (corners - plate.xpos) @ rotation
+        center = (self.object_position(name) - plate.xpos) @ rotation
         if fully:
             return bool(
-                np.max(self.scene_spec.plate_distance(corners[:, :2] - center))
-                < -self.scene_spec.plate_wall_thickness
+                np.max(self.scene_spec.plate_distance(corners[:, :2])) < -self.scene_spec.plate_wall_thickness
                 and np.min(corners[:, 2]) < self.scene_spec.plate_base_thickness + 0.006
             )
         return bool(
-            self.scene_spec.plate_distance(self.object_position(name)[:2] - center)
-            < self.object_sizes[name] * 0.71
+            self.scene_spec.plate_distance(center[:2]) < self.object_sizes[name] * 0.71
             and np.min(corners[:, 2])
             < self.scene_spec.plate_base_thickness + self.scene_spec.plate_rim_height + 0.006
         )

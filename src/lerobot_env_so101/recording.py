@@ -110,7 +110,7 @@ class FileEpisodeSink:
 
 
 def dataset_features(width: int = 640, height: int = 480) -> dict:
-    """Stable future LeRobotDataset contract; action records the executed target."""
+    """LeRobotDataset feature contract; action records the executed target."""
     from lerobot.utils.feature_utils import hw_to_dataset_features
 
     from .config import JOINTS

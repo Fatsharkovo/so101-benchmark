@@ -1,6 +1,45 @@
 # 验证记录
 
-## 实物参数对齐复验（2026-09-16，当前版本）
+## 遥操作采集与 XML 场景复验（2026-09-16，当前版本）
+
+- 相机默认位置 `[0.30, 0, 0.35]` 米，下俯 60°；六个原生 MJCF 入口可直接编译，
+  运行时加载根目录 `task_scenes/`，XML 编辑、配置覆盖和评分尺寸同步通过测试。
+- 等待试操作不计入回合；Space 恢复完整初始状态后采集；失败/超时/R 丢弃；
+  仅保存确认后增加计数。主窗口沿用原顶部信息行，追加计数和 `Space: start recording`。
+- 全套测试 **51 passed, 4 skipped**：其中 GUI 测试在 GLFW 下单独运行并通过，
+  其余三个跳过项需要 uv 环境中未安装的可选 LeRobot/gRPC 依赖。
+- GLFW 测试通过：连续重建模型后，三窗口原生 ID、用户窗口大小及主视角均保留；
+  Space 的 REPEAT 事件不触发开始，PRESS 才触发。
+- 使用已有 LeRobot 0.6.0 解释器完成官方 v3.0 写入、丢弃、退出收尾与重新读取，
+  检查状态/实际动作/时间戳及 front/wrist 视频帧对应。
+- 默认 640×480、30 Hz 的三窗口端到端验证连续采集 **2 个成功叠放回合**；
+  自动保存、计数 0→1→2、原窗口内重置及等待下一次 Space 均通过；
+  官方读取器重新读取 **568 帧、两路 640×480 视频、30 Hz** 成功。
+  该验证使用纯仿真脚本动作，本轮没有连接实体 Leader，也没有改写硬件校准。
+- 六任务各 seed 0–9，20 秒上限：**59/60 成功**，唯一失败仍为黄色入盘 seed 7
+  抓取滑脱后 IK 补偿不可达，与上一版本一致；六个固定场景基线全部成功。
+- wheel 构建及从独立解包目录加载六任务场景/网格通过；Ruff 和 pre-commit 检查通过。
+
+`uv lock --check --offline` 在本工作区仍提示需要更新锁文件；用未修改的 `origin/main`
+配置与锁文件复验也得到同样结果，属于原有本地 LeRobot checkout 元数据差异。
+本次不修改依赖版本，测试与运行使用已有 uv 环境及 `--no-sync`。
+
+本地验证产物在 `outputs/teleop_validation/`，不随代码提交。
+自动化命令（`SO101_DATASET_PYTHON` 指向已有 LeRobot v3.0 写入环境）：
+
+```bash
+env -u PYTHONPATH MUJOCO_GL=egl SO101_DATASET_PYTHON=/path/to/lerobot-env/bin/python \
+  uv run --no-sync pytest tests -q
+env -u PYTHONPATH MUJOCO_GL=glfw SO101_TEST_GUI=1 \
+  uv run --no-sync pytest tests/test_teleop_viewer.py -q
+uv run --no-sync ruff check src tests tools
+uv run --no-sync ruff format --check src tests tools
+uvx pre-commit run --all-files
+```
+
+历史章节中的旧相机参数、未实现采集/回放等边界描述仅对应其当时版本。
+
+## 实物参数对齐复验（2026-09-16，上一版本）
 
 - wrist_roll 零位映射改为仿真角度 = Leader 角度 - 90°，夹爪与相机支架整体转向前方。
   已验证正反转换、正向角增量和默认支架位置。更新后运行实体 Leader → 仿真遥操作，

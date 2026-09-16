@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-09-16 — 遥操作采集与 XML 场景
+
+- 初次进入及重置后等待 Space；等待时允许试操作，Space 恢复完整初始场景后开始计时采集。
+- 保留三个 GLFW 窗口和用户主视角；成功自动保存并重置，失败、超时和手动中断丢弃回合。
+- 在主窗口原顶部信息行追加 `Saved episodes: N` 和 `Space: start recording`；
+  仅在写入进程确认保存后计数，重置不清零。
+- 独立 LeRobot 环境以官方 v3.0 格式保存成功回合的状态、实际动作、front/wrist 视频；
+  队列满或写入失败时显示错误并停止采集。退出完成已保存回合的写入收尾。
+- 遥操作接入现有 YAML；`sim.episode_seconds` 控制单回合，`--seconds` 仅限制整个会话。
+- 六任务运行时直接加载根目录 `task_scenes` XML；保留 Python 自定义任务兼容，
+  从有效 XML 提取评分尺寸，回放优先读取采集时的场景快照。
+- front 相机更新为基座前方 30 cm、高 35 cm、向下 60°；保留 wrist 映射和 10 g 方块。
+
 ## Unreleased
 
 ### Added
