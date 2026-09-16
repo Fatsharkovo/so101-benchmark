@@ -38,8 +38,9 @@ class SO101Env(gym.Env):
                 ),
             }
         )
+        offsets = np.asarray(self.cfg.joint_offsets_deg, dtype=np.float32)
         self.action_space = spaces.Box(
-            np.array([-180] * 5 + [0], np.float32), np.array([180] * 5 + [100], np.float32)
+            np.r_[offsets - 180, np.float32(0)], np.r_[offsets + 180, np.float32(100)]
         )
         self.model = self.data = self.renderer = None
         self.frames = {}
@@ -163,13 +164,15 @@ class SO101Env(gym.Env):
         center = np.array(self.sampled["plate_xy"])
         if fully:
             return bool(
-                np.max(np.linalg.norm(corners[:, :2] - center, axis=1)) < self.scene_spec.plate_radius - 0.003
-                and np.min(corners[:, 2]) < 0.012
+                np.max(self.scene_spec.plate_distance(corners[:, :2] - center))
+                < -self.scene_spec.plate_wall_thickness
+                and np.min(corners[:, 2]) < self.scene_spec.plate_base_thickness + 0.006
             )
         return bool(
-            np.linalg.norm(self.object_position(name)[:2] - center)
-            < self.scene_spec.plate_radius + self.object_sizes[name] * 0.71
-            and np.min(corners[:, 2]) < 0.018
+            self.scene_spec.plate_distance(self.object_position(name)[:2] - center)
+            < self.object_sizes[name] * 0.71
+            and np.min(corners[:, 2])
+            < self.scene_spec.plate_base_thickness + self.scene_spec.plate_rim_height + 0.006
         )
 
     def contact_bodies(self, a: str, b: str) -> bool:

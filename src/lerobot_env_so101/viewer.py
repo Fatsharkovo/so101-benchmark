@@ -13,6 +13,8 @@ class ThreeViewWindow:
         self.glfw, self.mj, self.env = glfw, mujoco, env
         if not glfw.init():
             raise RuntimeError("GLFW cannot open a display; use display=false for headless evaluation")
+        # MuJoCo's offscreen GLFW context leaves the global VISIBLE hint disabled.
+        glfw.window_hint(glfw.VISIBLE, glfw.TRUE)
         self.window = glfw.create_window(1280, 720, "SO-101 Benchmark", None, None)
         if not self.window:
             glfw.terminate()

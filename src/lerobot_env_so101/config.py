@@ -28,11 +28,12 @@ class SimConfig:
     images: bool = True
     home_degrees: list[float] = field(default_factory=lambda: [0, -70, 70, 60, 0, 70])
     joint_signs: list[float] = field(default_factory=lambda: [1] * 5)
-    joint_offsets_deg: list[float] = field(default_factory=lambda: [0] * 5)
+    # q_sim = radians((leader_degrees - offset) * sign); wrist zero faces forward.
+    joint_offsets_deg: list[float] = field(default_factory=lambda: [0, 0, 0, 0, 90])
     cameras: dict[str, Any] = field(default_factory=dict)
     randomization: dict[str, dict[str, Any]] = field(
         default_factory=lambda: {
-            "layout": {"enabled": True, "position_jitter": 0.012, "yaw_deg": [-10, 10]},
+            "layout": {"enabled": True, "position_jitter": 0.005, "yaw_deg": [-5, 5]},
             "appearance": {"enabled": False, "brightness": [0.8, 1.2], "table_gray": [0.35, 0.65]},
             "camera": {"enabled": False, "position_jitter": 0.005, "rotation_deg": 2.0},
             "size": {"enabled": False, "scale": [0.9, 1.1]},

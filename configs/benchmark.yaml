@@ -17,8 +17,8 @@ sim:
   randomization:
     layout:
       enabled: true
-      position_jitter: 0.012
-      yaw_deg: [-10, 10]
+      position_jitter: 0.005
+      yaw_deg: [-5, 5]
     appearance:
       enabled: false
       brightness: [0.8, 1.2]

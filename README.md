@@ -59,8 +59,17 @@ uv run --no-sync so101-bench eval --config configs/smoke.yaml
 抬升、支撑、稳定计时均由物理状态判定；未释放、掠过盘面和短暂接触不能成功。
 方块跌落桌下为终止失败，时间耗尽为截断失败。默认不要求机械臂复位。
 
-默认方块边长 25 mm、质量 25 g，盘子半径 60 mm；控制频率 30 Hz，物理频率
+默认方块边长 25 mm、质量 10 g，盘子为外边长 100 mm 的圆角正方形，圆角半径
+暂取 12 mm，颜色为浅蓝；盘底及盘沿厚度均为 2 mm，盘沿高出底面 6 mm，
+总高度 8 mm；控制频率 30 Hz，物理频率
 600 Hz，每回合最多 60 秒。所有评测使用固定的 MuJoCo 资产版本和采样参数记录。
+
+六项任务共用浅蓝渐变天空、明亮照明与无限延展的视觉地面。桌面仍为操作区域，
+外围地面不参与碰撞，方块跌落失败规则保持不变。五色方块默认位于距底座约
+15–24 cm 的紧凑区域；叠放两块位于前方 19 cm、左右各 4.5 cm，中心间距 9 cm。
+默认位置扰动为每轴 ±5 mm，朝向扰动为 ±5°；关闭布局随机化时使用固定位置。
+入盘和叠放任务均可通过任务 YAML 的 `params.positions` 覆盖各颜色的 `[x, y]`。
+布局与视觉更新后，旧评测分数和录像不应直接作为当前版本的结果。
 
 ## 配置、推理和结果
 
@@ -79,7 +88,10 @@ uv run so101-bench eval --config configs/pi05_remote.yaml --mode realtime
 模型应携带已保存的 processor 与归一化统计，采用六维 SO-101 绝对关节控制。
 状态/动作顺序为 `shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll, gripper`；
 前五维为角度，夹爪为 `0–100`。内部统一转换成 MuJoCo 弧度，并取关节限位。
-`sim.joint_signs` 和 `sim.joint_offsets_deg` 用于后续实机零位映射，默认标准仿真标定。
+`sim.joint_signs` 和 `sim.joint_offsets_deg` 控制实机零位映射，转换为
+`q_sim = radians((角度 - offset) * sign)`。当前 offsets 默认为 `[0, 0, 0, 0, 90]`：
+Leader 的 wrist_roll 零度映射到仿真 -90°，整个夹爪及相机支架随关节朝向正前方，
+没有平移相机支架几何。反向状态转换使用同一偏移；旧模型的标定需与该设置一致。
 
 两路图像是 RGB uint8，默认 640×480。名称不同的检查点可配置：
 
@@ -123,6 +135,8 @@ uv run python -m lerobot.async_inference.policy_server \
 超过上限明确报错。更大的随机化范围需重新检查任务可达性和物理基线成功率。
 相机可以通过 `sim.cameras.front/overview` 的 `position/target/fovy` 调整，
 `sim.cameras.wrist` 支持 `pos/euler/fovy`（局部米/弧度，fovy 为度）。
+front 默认位置为 `[0.35, 0, 0.30]` 米（基座前方为 +X），朝向 `[0.05, 0, 0]`，
+即朝机械臂方向下俯 45°，垂直视场角为 60°。
 
 每次运行输出：
 
@@ -165,13 +179,19 @@ params:
   target: blue
   colors: [red, blue, green, yellow, orange]
   cube_size: 0.025
-  cube_mass: 0.025
+  cube_mass: 0.010
   plate_radius: 0.05
+  plate_shape: rounded_square
+  plate_corner_radius: 0.012
+  plate_base_thickness: 0.002
+  plate_wall_thickness: 0.002
+  plate_rim_height: 0.006
   plate_xy: [0.18, 0.10]
   stable_seconds: 1.0
 ```
 
 新行为继承 `Task`，实现 `scene()` 和 `evaluate(env)`，需要每回合状态时实现 `reset(env)`。
+圆角方盘的 `plate_radius` 表示外边长的一半；`plate_shape: circle` 可使用圆盘。
 `SceneSpec` 定义物体和盘子，也允许通过 `assets_xml/worldbody_xml` 添加自定义 MJCF。
 任务的 Python 模块应通过本地可编辑包安装，YAML 的 `class` 按模块路径导入。
 `evaluate` 返回 `TaskStatus(success, failure, metrics)`；模型后端、三视角窗口、视频和
@@ -192,8 +212,23 @@ Leader 必须使用匹配的角度与夹爪标定。可将已有 Leader 的动�
 Follower，不需要实体 Follower。`recording.dataset_features/dataset_frame` 保持
 LeRobotDataset 格式；记录实际执行动作。第三视角供查看，训练图像默认仅 front/wrist。
 
-当前已经实现仿真 Follower 和可替换 `EpisodeSink` 接口，实体 Leader 的连接、
-录制/重录交互和采集 UI 控制属于后续工作。没有运行过任何真实机器人客户端。
+当前已经实现仿真 Follower 和可替换 `EpisodeSink` 接口。录制/重录交互和完整采集
+UI 控制属于后续工作；下述独立调试入口支持实体 Leader 到仿真的遥操作。
+
+本地调试另提供 `tools/teleoperate.py`：读取已校准实体 Leader，控制仿真机械臂，
+同时打开 overview、front、wrist 三个独立窗口。仿真使用本项目环境，
+`--leader-python` 指向已安装 LeRobot 和 Feetech 驱动的 Python 环境。
+
+```bash
+env -u PYTHONPATH uv run --no-sync python tools/teleoperate.py \
+  --port /dev/serial/by-id/<你的Leader设备> \
+  --leader-id <现有校准ID> \
+  --leader-python /path/to/lerobot-env/bin/python \
+  --task stack_blue_on_red --seconds 300
+```
+
+按 `R` 重置固定场景，`Esc` 或关闭任一窗口结束；`--task` 可选择上述六项任务。
+该入口保存调试截图和运行摘要，不录制训练数据集，不连接实体 Follower。
 
 ## 验证
 

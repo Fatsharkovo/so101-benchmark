@@ -51,7 +51,12 @@ class PickPlaceOracle:
             env.object_position(self.base)
             + [0, 0, (env.object_sizes[self.base] + env.object_sizes[self.target]) / 2]
             if self.base
-            else np.array([*env.sampled["plate_xy"], 0.006 + env.object_sizes[self.target] / 2])
+            else np.array(
+                [
+                    *env.sampled["plate_xy"],
+                    env.scene_spec.plate_base_thickness + env.object_sizes[self.target] / 2,
+                ]
+            )
         )
         pick = pick + [0, 0, 0.001]
         place = place + [0, 0, 0.003]
