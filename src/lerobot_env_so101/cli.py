@@ -87,7 +87,10 @@ def replay(directory, cfg):
     env = SO101Env(metadata["task"]["id"], sim, metadata["config"]["task_paths"])
     viewer, writers = None, {}
     try:
-        env.reset(seed=metadata["seed"])
+        env.reset(
+            seed=metadata["seed"],
+            options={"scene_xml": directory / "scene.xml"} if (directory / "scene.xml").exists() else None,
+        )
         if cfg.display:
             from .viewer import ThreeViewWindow
 

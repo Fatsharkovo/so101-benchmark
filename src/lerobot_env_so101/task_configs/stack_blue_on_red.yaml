@@ -5,3 +5,5 @@ params:
   target: blue
   base: red
   stable_seconds: 1.0
+
+scene: stack_blue_on_red.xml

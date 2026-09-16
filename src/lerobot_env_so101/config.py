@@ -93,6 +93,12 @@ class PolicyConfig:
 
 
 @dataclass
+class RecordingConfig:
+    repo_id: str = ""
+    writer_python: str = ""
+
+
+@dataclass
 class RunConfig:
     tasks: list[str] = field(default_factory=lambda: ["all"])
     task_paths: list[str] = field(default_factory=list)
@@ -106,6 +112,7 @@ class RunConfig:
     refill_fraction: float = 0.5
     sim: SimConfig = field(default_factory=SimConfig)
     policy: PolicyConfig = field(default_factory=PolicyConfig)
+    recording: RecordingConfig = field(default_factory=RecordingConfig)
 
     def __post_init__(self) -> None:
         if self.mode not in ("sync", "realtime") or self.episodes < 1 or self.seed < 0:
@@ -146,6 +153,7 @@ def load_config(path: str | Path | None = None, overrides: dict | None = None) -
     raw = merge(raw, overrides or {})
     raw["sim"] = construct(SimConfig, raw["sim"])
     raw["policy"] = construct(PolicyConfig, raw["policy"])
+    raw["recording"] = construct(RecordingConfig, raw["recording"])
     config = construct(RunConfig, raw)
     if path:
         parent = Path(path).resolve().parent

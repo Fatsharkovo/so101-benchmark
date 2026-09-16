@@ -4,3 +4,5 @@ instruction: Pick up the yellow cube and place it in the plate.
 params:
   target: yellow
   stable_seconds: 1.0
+
+scene: place_yellow_in_plate.xml

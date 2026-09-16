@@ -135,8 +135,8 @@ uv run python -m lerobot.async_inference.policy_server \
 超过上限明确报错。更大的随机化范围需重新检查任务可达性和物理基线成功率。
 相机可以通过 `sim.cameras.front/overview` 的 `position/target/fovy` 调整，
 `sim.cameras.wrist` 支持 `pos/euler/fovy`（局部米/弧度，fovy 为度）。
-front 默认位置为 `[0.35, 0, 0.30]` 米（基座前方为 +X），朝向 `[0.05, 0, 0]`，
-即朝机械臂方向下俯 45°，垂直视场角为 60°。
+front 默认位置为 `[0.30, 0, 0.35]` 米（基座前方为 +X），
+向下朝机械臂方向俯视 60°，垂直视场角为 60°；光轴与桌面相交于约 `[0.0979, 0, 0]`。
 
 每次运行输出：
 
@@ -163,9 +163,25 @@ uv run so101-bench replay --episode-dir outputs/<运行>/<任务>/seed_000000
 ```
 
 回放使用原配置和已记录的关节/物体状态；请保留任务定义与本项目版本。
-`scene.xml` 同时保存用于审计，目前回放仍从任务定义重建场景，不保证跨版本兼容。
+回放优先加载保存的 `scene.xml`；旧输出缺少该文件时，才从任务定义重建。
+外部网格资源与任务评分代码仍需保留；这不保证任意跨版本兼容。
 
-## 扩展任务和未来遥操作
+## 可编辑 XML 场景
+
+内置六个任务直接加载仓库根目录 `task_scenes/<任务 ID>.xml`，共享 `common.xml` 中的
+机械臂、桌面、灯光、天空和相机。任务 XML 包含物体及盘子几何；可以用 MuJoCo 直接打开。
+运行时会展开 include，并在内存副本上应用配置和随机化，不改写源 XML。
+修改后重新启动环境即可生效；当前会话的 R/Space 用于恢复该回合最初布局。
+
+任务 YAML 的 `scene` 指定 XML 文件。相对路径先相对任务 YAML 解析，内置文件名再从
+`task_scenes` 包查找；场景 XML 及机器人资源也会随 wheel 分发。
+XML 默认值 → 显式任务参数/相机 YAML 设置 → 已启用随机化，按此顺序生效。
+物体位置、颜色、质量以及盘子评分尺寸读取最终场景，不被 Python 默认值覆盖。
+方块使用 `<body name="red">`、`<freejoint>` 和 `<geom name="red_geom" type="box">` 等命名；
+任务目标必须保留。盘子保持圆盘或圆角方盘结构，编辑轮廓时应同步调整底面和盘沿几何。
+新增任意形状或评分规则仍需实现对应 Python Task。
+
+## 扩展任务与遥操作
 
 任务由 YAML 指定 ID、Python 类、指令和参数。内置任务目录自动扫描；用户目录通过
 `task_paths` 配置，相对 YAML 所在目录解析。ID 必须唯一；无需修改中央注册表。
@@ -205,30 +221,50 @@ uv run lerobot-eval --env.type=so101_bench --env.task=stack_blue_on_red \
   --eval.n_episodes=1 --eval.batch_size=1
 ```
 
-未来采集端使用实体 Leader，仿真端使用 `SO101SimRobot`。它提供
-`connect/get_observation/send_action/reset_episode/disconnect` 和 LeRobot 标准特征描述。
-每次 `send_action` 推进一个控制周期，外层 Leader 采集循环负责 30 Hz 节拍；
-Leader 必须使用匹配的角度与夹爪标定。可将已有 Leader 的动作字典直接传入仿真
-Follower，不需要实体 Follower。`recording.dataset_features/dataset_frame` 保持
-LeRobotDataset 格式；记录实际执行动作。第三视角供查看，训练图像默认仅 front/wrist。
+`SO101SimRobot` 提供 `connect/get_observation/send_action/reset_episode/disconnect`
+和 LeRobot 标准特征描述，可用于外部采集循环。每次 `send_action` 推进一个控制周期。
 
-当前已经实现仿真 Follower 和可替换 `EpisodeSink` 接口。录制/重录交互和完整采集
-UI 控制属于后续工作；下述独立调试入口支持实体 Leader 到仿真的遥操作。
+### 实体 Leader → 仿真采集
 
-本地调试另提供 `tools/teleoperate.py`：读取已校准实体 Leader，控制仿真机械臂，
-同时打开 overview、front、wrist 三个独立窗口。仿真使用本项目环境，
-`--leader-python` 指向已安装 LeRobot 和 Feetech 驱动的 Python 环境。
+`tools/teleoperate.py` 读取已校准实体 Leader，打开 overview、front、wrist 三个独立窗口。
+仿真使用本项目的 uv 环境；`--leader-python` 指向已有 LeRobot 和 Feetech 驱动环境。
+官方 LeRobot v3.0 写入进程默认使用同一解释器，也可通过 YAML 的
+`recording.writer_python` 单独指定。不需要实体 Follower。
 
 ```bash
 env -u PYTHONPATH uv run --no-sync python tools/teleoperate.py \
+  --config configs/fixed.yaml \
   --port /dev/serial/by-id/<你的Leader设备> \
   --leader-id <现有校准ID> \
   --leader-python /path/to/lerobot-env/bin/python \
-  --task stack_blue_on_red --seconds 300
+  --task stack_blue_on_red
 ```
 
-按 `R` 重置固定场景，`Esc` 或关闭任一窗口结束；`--task` 可选择上述六项任务。
-该入口保存调试截图和运行摘要，不录制训练数据集，不连接实体 Follower。
+- 初次进入和每次重置后为 `WAITING`：可以试操作，但不计时、不采集。
+- 按 **Space** 恢复该回合的完整初始场景，再进入 `RECORDING`。按住空格不会重复开始。
+- 成功后自动保存，使用下一 seed 在原窗口中重置，再等待 Space；窗口位置、大小和主视角保留。
+- 失败、超时或按 **R** 丢弃当前回合并重试同一 seed；等待时 R 恢复初始场景。
+- **Esc** 或关闭任一窗口退出，丢弃未完成回合并完成成功数据的收尾。
+- 主窗口现有顶部信息行追加 `Saved episodes: N | Space: start recording`。
+  N 为本次会话已经确认保存的成功回合数，重置不清零；保存中不会提前增加。
+
+使用已有 YAML 的 `sim.episode_seconds` 作为回合时限（默认 60 秒），频率、图像大小、
+机械臂映射、相机和随机化也来自同一配置。等待时间不占用回合时限。
+可选 `--seconds 300` 仅限制整个会话的墙钟时间，默认不限时；评测用 `episodes` 不限制采集数量。
+`--task` 覆盖 YAML 的单任务设置，默认 `tasks: [all]` 在遥操作中选择叠放任务。
+
+每次运行创建独立的 `outputs/teleop_<时间戳>/`，或用 `--output` 指定尚不存在的目录：
+
+```text
+config.json, provenance.json, summary.json, writer.log
+ dataset/                  # 官方 LeRobot v3.0：meta/、data/、videos/
+ episodes/episode_000000/   # 成功回合的 metadata.json、scene.xml
+```
+
+数据集保存六维关节状态、实际应用动作、任务说明及 front/wrist 两路 H.264 视频。
+每帧是动作执行前的观察，时间戳按控制频率从 0 开始；overview 只用于查看。
+`recording.repo_id` 默认 `local/<任务 ID>`，数据只写本地，不上传 Hub。
+传输队列有容量限制；写入失败或队列满时界面显示 `ERROR` 并停止采集，详细信息在会话日志中。
 
 ## 验证
 
@@ -236,6 +272,7 @@ env -u PYTHONPATH uv run --no-sync python tools/teleoperate.py \
 uv run pytest tests -q
 uv run ruff check src tests tools
 uv run ruff format --check src tests tools
+uvx pre-commit run --all-files
 ```
 
 详细结果见 [VALIDATION.md](VALIDATION.md)。π0 和 SmolVLA 适配已提供，尚未取得匹配

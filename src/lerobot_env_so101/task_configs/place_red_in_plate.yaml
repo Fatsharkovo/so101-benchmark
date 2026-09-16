@@ -4,3 +4,5 @@ instruction: Pick up the red cube and place it in the plate.
 params:
   target: red
   stable_seconds: 1.0
+
+scene: place_red_in_plate.xml

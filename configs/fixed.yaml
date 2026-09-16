@@ -4,3 +4,9 @@ video: true
 sim:
   randomization:
     layout: {enabled: false}
+
+# Teleoperation records until Esc unless --seconds limits the whole session.
+# sim.episode_seconds (default 60) is the recording horizon; waiting is excluded.
+recording:
+  repo_id: ""  # Default: local/<task ID>; local storage only, no Hub upload.
+  writer_python: ""  # Default: --leader-python, with LeRobot v3.0 writer installed.

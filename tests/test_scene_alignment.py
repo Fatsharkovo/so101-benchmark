@@ -30,9 +30,9 @@ def test_front_camera_pose_and_ten_gram_cubes(task):
     env = SO101Env(task, SimConfig(images=False))
     try:
         env.reset(seed=0)
-        np.testing.assert_allclose(env.data.cam("front").xpos, [0.35, 0, 0.30])
+        np.testing.assert_allclose(env.data.cam("front").xpos, [0.30, 0, 0.35])
         direction = -env.data.cam("front").xmat.reshape(3, 3)[:, 2]
-        np.testing.assert_allclose(direction, np.array([-1, 0, -1]) / np.sqrt(2), atol=1e-8)
+        np.testing.assert_allclose(direction, np.array([-0.5, 0, -np.sqrt(3) / 2]), atol=1e-8)
         for name in env.object_sizes:
             assert env.model.body(name).mass[0] == pytest.approx(0.010)
     finally:

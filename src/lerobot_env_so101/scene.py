@@ -88,7 +88,7 @@ def add_plate(world: ET.Element, asset: ET.Element, spec: SceneSpec, plate_xy: n
         )
 
 
-def make_xml(spec: SceneSpec, cfg: SimConfig, seed: int) -> tuple[str, dict]:
+def _base_xml(spec: SceneSpec, cfg: SimConfig) -> ET.Element:
     root = ET.parse(ASSET_DIR / "so101.xml").getroot()
     root.find("compiler").set("meshdir", str(ASSET_DIR / "assets"))
     root.find("option").set("timestep", str(1 / cfg.physics_hz))
@@ -158,11 +158,13 @@ def make_xml(spec: SceneSpec, cfg: SimConfig, seed: int) -> tuple[str, dict]:
         rgba="0.65 0.65 0.65 1",
         friction="0.8 0.005 0.0001",
     )
-    for name, pos in (("front", (0.35, 0, 0.30)), ("overview", (0.60, -0.65, 0.65))):
+    for name, pos in (("front", (0.30, 0, 0.35)), ("overview", (0.60, -0.65, 0.65))):
         camera_cfg = cfg.cameras.get(name, {})
         position = camera_cfg.get("position", pos)
-        # A 30 cm horizontal and vertical drop gives front an exact 45 degree pitch.
-        target = camera_cfg.get("target", (0.05, 0, 0) if name == "front" else (0.16, 0, 0.06))
+        # Front optical axis points down 60 degrees from the horizontal.
+        target = camera_cfg.get(
+            "target", (0.30 - 0.35 / math.sqrt(3), 0, 0) if name == "front" else (0.16, 0, 0.06)
+        )
         ET.SubElement(
             world,
             "camera",
@@ -179,6 +181,20 @@ def make_xml(spec: SceneSpec, cfg: SimConfig, seed: int) -> tuple[str, dict]:
     for attr in ("pos", "euler"):
         if attr in cfg.cameras.get("wrist", {}):
             wrist.set(attr, numbers(cfg.cameras["wrist"][attr]))
+    return root
+
+
+def make_xml(
+    spec: SceneSpec,
+    cfg: SimConfig,
+    seed: int,
+    scene_path: Path | None = None,
+    params: dict | None = None,
+) -> tuple[str, dict]:
+    from .xml_scene import load_scene
+
+    root = load_scene(scene_path, spec, params or {}, cfg) if scene_path else _base_xml(spec, cfg)
+    world, asset = root.find("worldbody"), root.find("asset")
     sampled = {"seed": seed, "objects": {}, "groups": {}}
     streams = {
         key: np.random.default_rng(np.random.SeedSequence([seed, i]))
@@ -202,7 +218,7 @@ def make_xml(spec: SceneSpec, cfg: SimConfig, seed: int) -> tuple[str, dict]:
                 p[:2] += rng.uniform(
                     -layout.get("position_jitter", 0.005), layout.get("position_jitter", 0.005), 2
                 )
-            p[2] = sizes[obj.name] / 2 + 0.001
+            p[2] += (sizes[obj.name] - obj.size) / 2
             positions[obj.name] = p
         plate_xy = np.array(spec.plate_xy) if spec.plate_xy is not None else None
         if plate_xy is not None and layout.get("enabled", False):
@@ -231,26 +247,34 @@ def make_xml(spec: SceneSpec, cfg: SimConfig, seed: int) -> tuple[str, dict]:
         size = sizes[obj.name]
         mass = obj.mass * streams["physics"].uniform(*scales["physics"].get("mass_scale", [1, 1]))
         friction = streams["physics"].uniform(*scales["physics"].get("friction_scale", [1, 1]))
-        body = ET.SubElement(
-            world,
-            "body",
-            name=obj.name,
-            pos=numbers(positions[obj.name]),
-            euler=numbers([0, 0, np.deg2rad(yaw)]),
-        )
-        ET.SubElement(body, "freejoint", name=f"{obj.name}_joint")
-        ET.SubElement(
-            body,
-            "geom",
-            name=f"{obj.name}_geom",
-            type="box",
-            size=numbers([size / 2] * 3),
-            rgba=numbers([*obj.color, 1]),
-            mass=str(mass),
-            friction=f"{friction} 0.005 0.0001",
-            condim="4",
-            solref="0.008 1",
-        )
+        body = world.find(f"body[@name='{obj.name}']")
+        if body is None:
+            body = ET.SubElement(world, "body", name=obj.name)
+            ET.SubElement(body, "freejoint", name=f"{obj.name}_joint")
+            ET.SubElement(
+                body,
+                "geom",
+                name=f"{obj.name}_geom",
+                type="box",
+                rgba=numbers([*obj.color, 1]),
+                friction="1 0.005 0.0001",
+                condim="4",
+                solref="0.008 1",
+            )
+        body.set("pos", numbers(positions[obj.name]))
+        if yaw:
+            from .xml_scene import orientation
+
+            rotation = Rotation.from_euler("z", yaw, degrees=True) * orientation(body)
+            for key in ("quat", "euler", "xyaxes", "axisangle", "zaxis"):
+                body.attrib.pop(key, None)
+            q = rotation.as_quat()
+            body.set("quat", numbers([q[3], *q[:3]]))
+        geom = body.find(f"geom[@name='{obj.name}_geom']")
+        geom.set("size", numbers([size / 2] * 3))
+        geom.set("mass", str(mass))
+        base_friction = np.fromstring(geom.get("friction", "1 0.005 0.0001"), sep=" ")
+        geom.set("friction", numbers(base_friction * friction))
         sampled["objects"][obj.name] = {
             "position": positions[obj.name].tolist(),
             "yaw_deg": float(yaw),
@@ -259,7 +283,13 @@ def make_xml(spec: SceneSpec, cfg: SimConfig, seed: int) -> tuple[str, dict]:
             "friction": friction,
         }
     if plate_xy is not None:
-        add_plate(world, asset, spec, plate_xy)
+        plate = world.find("body[@name='plate']")
+        if plate is None:
+            add_plate(world, asset, spec, plate_xy)
+        else:
+            position = np.fromstring(plate.get("pos", "0 0 0"), sep=" ")
+            position[:2] = plate_xy
+            plate.set("pos", numbers(position))
         sampled["plate_xy"] = plate_xy.tolist()
     for item in ET.fromstring(f"<root>{spec.worldbody_xml}</root>"):
         world.append(item)
@@ -280,11 +310,11 @@ def make_xml(spec: SceneSpec, cfg: SimConfig, seed: int) -> tuple[str, dict]:
             camera.set("pos", numbers(p))
             angle = camera_group.get("rotation_deg", 2.0)
             delta = Rotation.from_euler("xyz", streams["camera"].uniform(-angle, angle, 3), degrees=True)
-            if "xyaxes" in camera.attrib:
-                xy = np.fromstring(camera.attrib.pop("xyaxes"), sep=" ").reshape(2, 3)
-                rot = Rotation.from_matrix(np.column_stack([xy[0], xy[1], np.cross(*xy)]))
-            else:
-                rot = Rotation.from_euler("xyz", np.fromstring(camera.attrib.pop("euler", "0 0 0"), sep=" "))
+            from .xml_scene import orientation
+
+            rot = orientation(camera)
+            for key in ("quat", "euler", "xyaxes", "axisangle", "zaxis"):
+                camera.attrib.pop(key, None)
             quat = (rot * delta).as_quat()
             camera.set("quat", numbers([quat[3], *quat[:3]]))
             sampled["groups"][camera.get("name")] = dict(camera.attrib)

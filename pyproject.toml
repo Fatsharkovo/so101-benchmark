@@ -19,9 +19,11 @@ test = ["pytest>=8", "ruff>=0.12"]
 so101-bench = "lerobot_env_so101.cli:main"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["src", "."]
+include = ["lerobot_env_so101*", "task_scenes"]
 
 [tool.setuptools.package-data]
+task_scenes = ["*.xml"]
 lerobot_env_so101 = ["task_configs/*.yaml", "assets/so101/*", "assets/so101/assets/*"]
 
 [tool.uv.sources]

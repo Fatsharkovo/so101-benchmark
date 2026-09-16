@@ -37,7 +37,7 @@ def read_leader(args: argparse.Namespace) -> None:
             started = time.monotonic()
             action = leader.get_action()
             print(json.dumps({"action": action, "time": time.monotonic()}), flush=True)
-            time.sleep(max(0, 1 / 30 - (time.monotonic() - started)))
+            time.sleep(max(0, 1 / args.control_hz - (time.monotonic() - started)))
     except (KeyboardInterrupt, BrokenPipeError):
         pass
     finally:
@@ -46,111 +46,57 @@ def read_leader(args: argparse.Namespace) -> None:
 
 
 def run(args: argparse.Namespace) -> None:
-    """Run the simulator in the uv environment with a separate Leader reader process."""
+    """Run three persistent views and record successful episodes with the official writer."""
     os.environ["MUJOCO_GL"] = "glfw"
-    import glfw
-    import mujoco as mj
+    from dataclasses import asdict
+
     import numpy as np
-    from PIL import Image
 
-    from lerobot_env_so101.config import JOINTS, SimConfig
+    from lerobot_env_so101.config import JOINTS, load_config
     from lerobot_env_so101.env import SO101Env
-    from lerobot_env_so101.viewer import ThreeViewWindow
+    from lerobot_env_so101.recording import write_json
+    from lerobot_env_so101.runner import provenance
+    from lerobot_env_so101.teleop import DatasetWriterProcess, TeleopSession
+    from lerobot_env_so101.teleop_viewer import SeparateViews
 
-    class SeparateViews(ThreeViewWindow):
-        def __init__(self, env: SO101Env) -> None:
-            super().__init__(env)
-            self.reset_requested = False
-            self.extra = []
-            glfw.set_window_title(self.window, "SO-101 Overview | R: reset | Esc: stop")
-            glfw.set_window_size(self.window, 800, 660)
-            glfw.set_window_pos(self.window, 20, 60)
-            try:
-                for index, name in enumerate(("front", "wrist")):
-                    window = glfw.create_window(480, 360, f"SO-101 {name}", None, None)
-                    if not window:
-                        raise RuntimeError(f"Cannot open {name} window")
-                    self.extra.append((name, window, None))
-                    glfw.set_window_pos(window, 840, 40 + index * 390)
-                    glfw.set_key_callback(window, self._key)
-                    glfw.make_context_current(window)
-                    glfw.swap_interval(0)
-                    context = mj.MjrContext(env.model, mj.mjtFontScale.mjFONTSCALE_100)
-                    self.extra[-1] = (name, window, context)
-            except BaseException:
-                self.close()
-                raise
-
-        def _key(self, window, key, scancode, action, mods) -> None:
-            super()._key(window, key, scancode, action, mods)
-            if key == glfw.KEY_R and action == glfw.PRESS:
-                self.reset_requested = True
-
-        def draw(self, info: dict, mode: str) -> bool:
-            glfw.make_context_current(self.window)
-            width, height = glfw.get_framebuffer_size(self.window)
-            if width and height:
-                rect = mj.MjrRect(0, 0, width, height)
-                mj.mjv_updateScene(
-                    self.env.model,
-                    self.env.data,
-                    self.option,
-                    None,
-                    self.camera,
-                    mj.mjtCatBit.mjCAT_ALL,
-                    self.scene,
-                )
-                mj.mjr_render(rect, self.scene, self.context)
-                label = f"{self.env.task} | {mode} | step {self.env.step_index} | R: reset | Esc: stop"
-                mj.mjr_overlay(
-                    mj.mjtFont.mjFONT_NORMAL,
-                    mj.mjtGridPos.mjGRID_TOPLEFT,
-                    rect,
-                    label,
-                    "",
-                    self.context,
-                )
-                glfw.swap_buffers(self.window)
-            for name, window, context in self.extra:
-                glfw.make_context_current(window)
-                width, height = glfw.get_framebuffer_size(window)
-                if not width or not height:
-                    continue
-                frame = self.env.frames[name]
-                ys = np.arange(height) * frame.shape[0] // height
-                xs = np.arange(width) * frame.shape[1] // width
-                pixels = np.ascontiguousarray(frame[ys[:, None], xs][::-1])
-                mj.mjr_drawPixels(pixels.reshape(-1), None, mj.MjrRect(0, 0, width, height), context)
-                glfw.swap_buffers(window)
-            glfw.poll_events()
-            return not any(
-                glfw.window_should_close(window)
-                for window in [self.window, *(item[1] for item in self.extra)]
-            )
-
-        def close(self) -> None:
-            for _, window, context in self.extra:
-                glfw.make_context_current(window)
-                if context is not None:
-                    context.free()
-                glfw.destroy_window(window)
-            super().close()
-
-    cfg = SimConfig(width=640, height=480, render_backend="glfw", episode_seconds=args.seconds)
-    cfg.randomization["layout"]["enabled"] = False
-    env = SO101Env(args.task, cfg)
-    viewer = process = None
+    overrides = {"display": True}
+    if args.task:
+        overrides["tasks"] = [args.task]
+    config = load_config(args.config, overrides)
+    if len(config.tasks) != 1:
+        raise ValueError("Teleoperation needs a single YAML task or --task override")
+    task = config.tasks[0] if config.tasks != ["all"] else "stack_blue_on_red"
+    output = args.output or Path(config.output) / f"teleop_{time.time_ns()}"
+    output.mkdir(parents=True, exist_ok=False)
+    write_json(output / "config.json", asdict(config))
+    metadata = provenance()
+    revision = subprocess.run(
+        ["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=Path(__file__).resolve().parents[1]
+    )
+    metadata["benchmark_commit"] = revision.stdout.strip() if revision.returncode == 0 else None
+    write_json(output / "provenance.json", metadata)
+    env = SO101Env(task, config.sim, config.task_paths)
+    viewer = process = writer = session = None
     samples: queue.Queue = queue.Queue(maxsize=1)
     started = time.monotonic()
-    steps = resets = 0
-    minimum = maximum = None
-    info = {}
+    steps = 0
     reason = "duration_elapsed"
-    args.output.mkdir(parents=True, exist_ok=False)
+    cleanup_error = None
     try:
-        env.reset(seed=0)
+        env.reset(seed=config.seed)
         viewer = SeparateViews(env)
-        viewer.draw({}, "Waiting for Leader")
+        writer = DatasetWriterProcess(
+            config.recording.writer_python or args.leader_python,
+            {
+                "root": str((output / "dataset").resolve()),
+                "repo_id": config.recording.repo_id or f"local/{task}",
+                "fps": config.sim.control_hz,
+                "width": config.sim.width,
+                "height": config.sim.height,
+            },
+            output / "writer.log",
+        )
+        session = TeleopSession(env, writer, config, config.seed)
         child_env = os.environ.copy()
         child_env.pop("PYTHONPATH", None)
         process = subprocess.Popen(
@@ -163,6 +109,8 @@ def run(args: argparse.Namespace) -> None:
                 args.port,
                 "--leader-id",
                 args.leader_id,
+                "--control-hz",
+                str(config.sim.control_hz),
             ],
             stdout=subprocess.PIPE,
             text=True,
@@ -173,7 +121,7 @@ def run(args: argparse.Namespace) -> None:
             for line in process.stdout:
                 try:
                     sample = json.loads(line)
-                    if "action" not in sample:
+                    if not isinstance(sample, dict) or "action" not in sample:
                         continue
                 except (ValueError, TypeError):
                     continue
@@ -187,58 +135,64 @@ def run(args: argparse.Namespace) -> None:
         latest = None
         next_report = 0.0
         deadline = time.monotonic()
-        while time.monotonic() - started < args.seconds:
-            if process.poll() is not None:
-                raise RuntimeError(f"Leader reader exited: {process.returncode}")
+        print(f"Recording output: {output.resolve()}", flush=True)
+        while args.seconds is None or time.monotonic() - started < args.seconds:
             try:
-                latest = samples.get_nowait()
-            except queue.Empty:
-                pass
-            now = time.monotonic()
-            if latest is None:
-                if now - started > 30:
-                    raise TimeoutError("No Leader sample within 30 seconds")
-                mode = "Waiting for Leader"
-            else:
-                if now - latest["time"] > 1:
-                    raise TimeoutError("Leader readings stopped for more than one second")
-                action = np.array([latest["action"][f"{joint}.pos"] for joint in JOINTS])
-                minimum = action.copy() if minimum is None else np.minimum(minimum, action)
-                maximum = action.copy() if maximum is None else np.maximum(maximum, action)
-                if not env.done:
-                    _, _, _, _, info = env.step(action)
-                    steps += 1
-                mode = "LIVE" if not env.done else "Episode finished; R to reset"
+                session.poll()
+                if process.poll() is not None:
+                    raise RuntimeError(f"Leader reader exited: {process.returncode}")
+                try:
+                    latest = samples.get_nowait()
+                except queue.Empty:
+                    pass
+                now = time.monotonic()
+                if not viewer.draw(session.info, session.label()):
+                    reason = "window_closed"
+                    break
+                if viewer.reset_requested:
+                    viewer.reset_requested = False
+                    session.reset()
+                    viewer.start_requested = False
+                if viewer.start_requested:
+                    viewer.start_requested = False
+                    if latest is not None and now - latest["time"] <= 1:
+                        session.start()
+                if session.state != "ERROR":
+                    if latest is None:
+                        if now - started > 30:
+                            raise TimeoutError("No Leader sample within 30 seconds")
+                    else:
+                        if now - latest["time"] > 1:
+                            raise TimeoutError("Leader readings stopped for more than one second")
+                        action = np.array([latest["action"][f"{joint}.pos"] for joint in JOINTS])
+                        session.step(action)
+                        steps += 1
                 if now >= next_report:
                     print(
                         json.dumps(
                             {
-                                "status": mode,
-                                "steps": steps,
-                                "leader_degrees": action.round(2).tolist(),
-                                "success": info.get("is_success", False),
+                                "state": session.state,
+                                "saved_episodes": session.saved_episodes,
+                                "step": env.step_index,
+                                "error": session.error,
                             }
                         ),
                         flush=True,
                     )
-                    for name, frame in env.frames.items():
-                        Image.fromarray(frame).save(args.output / f"{name}.png")
                     next_report = now + 5
-            if not viewer.draw(info, mode):
-                reason = "window_closed"
-                break
-            if viewer.reset_requested:
-                viewer.close()
-                viewer = None
-                env.reset(seed=0)
-                viewer = SeparateViews(env)
-                info = {}
-                resets += 1
-            deadline = max(deadline + 1 / cfg.control_hz, time.monotonic())
+            except Exception as exc:
+                if session.state != "ERROR":
+                    print(str(exc), file=sys.stderr, flush=True)
+                    session.fail(exc)
+                    reason = str(exc)
+                # Keep errors visible in the existing window until the user exits.
+                if not viewer.draw(session.info, session.label()):
+                    break
+            deadline = max(deadline + 1 / config.sim.control_hz, time.monotonic())
             time.sleep(max(0, deadline - time.monotonic()))
     except KeyboardInterrupt:
         reason = "interrupted"
-    except BaseException as exc:
+    except Exception as exc:
         reason = f"{type(exc).__name__}: {exc}"
         raise
     finally:
@@ -251,19 +205,27 @@ def run(args: argparse.Namespace) -> None:
                     process.kill()
                     process.wait()
             process.stdout.close()
-        if viewer is not None:
-            viewer.close()
-        env.close()
+        try:
+            if writer is not None:
+                writer.close()
+        except Exception as exc:
+            cleanup_error = str(exc)
+        finally:
+            if viewer is not None:
+                viewer.close()
+            env.close()
         summary = {
             "steps": steps,
-            "resets": resets,
+            "resets": session.resets if session else 0,
+            "saved_episodes": writer.saved_episodes if writer else 0,
             "reason": reason,
+            "error": cleanup_error or (session.error if session else None),
             "seconds": time.monotonic() - started,
-            "leader_range": None if minimum is None else dict(zip(JOINTS, (maximum - minimum).tolist())),
-            "success": info.get("is_success", False),
         }
-        (args.output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+        write_json(output / "summary.json", summary)
         print(json.dumps(summary), flush=True)
+        if cleanup_error:
+            raise RuntimeError(cleanup_error)
 
 
 def main() -> None:
@@ -272,11 +234,17 @@ def main() -> None:
     parser.add_argument("--port", required=True)
     parser.add_argument("--leader-id", required=True)
     parser.add_argument("--leader-python", default=sys.executable)
-    parser.add_argument("--task", default="stack_blue_on_red")
-    parser.add_argument("--seconds", type=float, default=300)
-    parser.add_argument("--output", type=Path, default=Path("outputs") / f"teleop_{time.time_ns()}")
+    parser.add_argument(
+        "--config", type=Path, default=Path(__file__).resolve().parents[1] / "configs/fixed.yaml"
+    )
+    parser.add_argument("--task")
+    parser.add_argument("--control-hz", type=int, default=30, help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--seconds", type=float, help="Optional whole-session time limit; episode duration comes from YAML"
+    )
+    parser.add_argument("--output", type=Path, help="New session directory (must not exist)")
     args = parser.parse_args()
-    if args.seconds <= 0:
+    if args.seconds is not None and args.seconds <= 0:
         parser.error("--seconds must be positive")
     if args.read_leader:
         read_leader(args)
