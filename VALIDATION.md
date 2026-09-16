@@ -1,5 +1,49 @@
 # 验证记录
 
+## 实物参数对齐复验（2026-09-16，当前版本）
+
+- wrist_roll 零位映射改为仿真角度 = Leader 角度 - 90°，夹爪与相机支架整体转向前方。
+  已验证正反转换、正向角增量和默认支架位置。更新后运行实体 Leader → 仿真遥操作，
+  三个窗口均确认可见，叠放任务在第 461 个控制步判定成功；这不替代完整的实机标定测量。
+- front 相机位于 `[0.35, 0, 0.30]` 米，向下朝向基座方向 45°，垂直视场角 60°。
+- 所有方块默认质量 10 g；浅蓝圆角方盘外边长 100 mm，圆角半径暂取 12 mm，
+  盘底/盘沿厚度均为 2 mm，盘沿高出底面 6 mm。碰撞、入盘判定、脚本放置高度同步更新。
+- 全套测试 **35 passed, 3 skipped**，Ruff 检查与格式检查通过。
+- 六任务各 seed 0–9 的脚本物理基线 **59/60 成功**。黄色入盘 seed 7 抓取滑脱后，
+  脚本 IK 补偿目标不可达；其余五项任务均 10/10。这是脚本基线结果，未评测学习模型。
+  [结果](outputs/physical_alignment/thin_blue_plate/results.json)；
+  [更新后的预览](outputs/physical_alignment/thin_blue_plate/preview.png)。
+
+本节 `outputs/` 链接指向本地验证产物，不随代码提交；校准文件、运行日志、数据集和
+模型权重也不纳入提交。复验命令：
+
+```bash
+env -u PYTHONPATH MUJOCO_GL=egl uv run --no-sync pytest tests -q
+uv run --no-sync ruff check src tests tools
+uv run --no-sync ruff format --check src tests tools
+env -u PYTHONPATH MUJOCO_GL=egl uv run --no-sync so101-bench eval \
+  --config configs/smoke.yaml --episodes 10 --seed 0
+```
+
+评测入口遇到运行错误会提前结束；要复现全部 60 个回合，需分别运行各任务，并在
+黄色任务 seed 7 的已知错误后单独运行 seed 8–9。
+
+## 本机场景优化复验（2026-09-16）
+
+六项任务统一增加浅蓝渐变天空、明亮照明、无限视觉地面，并收拢默认方块布局。
+默认每轴位置扰动缩小至 ±5 mm，朝向扰动缩小至 ±5°；叠放中心间距改为 9 cm。
+以下为更新后的复验，后续章节保留原开发环境的历史记录。
+
+- Python 3.12.13、MuJoCo 3.3.7，uv 独立环境；渲染使用 EGL。
+- `env -u PYTHONPATH MUJOCO_GL=egl uv run --no-sync pytest tests -q`：
+  **27 passed, 3 skipped**。跳过项需要未安装的 LeRobot/gRPC。
+- `ruff check src tests tools`、`ruff format --check src tests tools`：通过。
+- 六任务各 seed 0–9、20 秒上限、默认布局随机化：脚本物理基线 **60/60 成功**。
+  [原始结果](outputs/scene_refresh/baseline/20260916T131436.998122Z_sync_scripted/results.json)。
+- 六场景三视角均完成渲染：[预览总览](outputs/scene_refresh/all_tasks.png)。
+
+本次未重新评测学习模型。无限地面仅参与显示，桌面接触及跌落失败判定保持原样。
+
 验证日期：2026-09-16。平台：Linux、Python 3.12.13、MuJoCo 3.3.7；真实模型测试使用
 RTX 5090 D v2。开发虚拟环境复用了现有 `soarm101` 的 PyTorch/LeRobot；另外创建了
 不继承系统包的临时环境验证独立 wheel。没有操作实体机器人，也没有重置已有部署服务。

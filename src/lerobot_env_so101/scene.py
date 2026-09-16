@@ -26,6 +26,68 @@ def look_at(position, target) -> str:
     return numbers([*x, *y])
 
 
+def add_plate(world: ET.Element, asset: ET.Element, spec: SceneSpec, plate_xy: np.ndarray) -> None:
+    """Build a thin light-blue plate with a rounded boundary shared by scoring."""
+    plate = ET.SubElement(world, "body", name="plate", pos=numbers([*plate_xy, 0]))
+    half, radius = spec.plate_radius, spec.plate_corner_radius
+    base = spec.plate_base_thickness
+    wall = spec.plate_wall_thickness
+    rim_height = spec.plate_rim_height
+
+    def bottom(name: str, kind: str, size: list[float], xy=(0, 0)) -> None:
+        ET.SubElement(
+            plate,
+            "geom",
+            name=name,
+            type=kind,
+            size=numbers(size),
+            pos=numbers([*xy, base / 2]),
+            rgba="0.48 0.76 0.9 1",
+            friction="0.8 0.005 0.0001",
+        )
+
+    if spec.plate_shape == "circle":
+        bottom("plate_bottom", "cylinder", [half, base / 2])
+        angles = np.linspace(0, 2 * math.pi, 65)[:-1]
+        boundary = np.column_stack([np.cos(angles), np.sin(angles)]) * (half - wall / 2)
+    else:
+        inset = half - radius
+        boundary = []
+        outline = []
+        for i, (sx, sy) in enumerate(((1, 1), (-1, 1), (-1, -1), (1, -1))):
+            center = np.array([sx, sy]) * inset
+            angles = np.linspace(i * math.pi / 2, (i + 1) * math.pi / 2, 9)
+            radial = np.column_stack([np.cos(angles), np.sin(angles)])
+            boundary.extend(center + radial * (radius - wall / 2))
+            outline.extend(center + radial * radius)
+        boundary = np.asarray(boundary)
+        # A single convex base avoids overlapping contact surfaces and coplanar rendering flicker.
+        vertices = [[*point, z] for z in (0, base) for point in outline]
+        ET.SubElement(asset, "mesh", name="plate_base_mesh", vertex=numbers(np.ravel(vertices)))
+        ET.SubElement(
+            plate,
+            "geom",
+            name="plate_bottom",
+            type="mesh",
+            mesh="plate_base_mesh",
+            rgba="0.48 0.76 0.9 1",
+            friction="0.8 0.005 0.0001",
+        )
+    for i, start in enumerate(boundary):
+        end = boundary[(i + 1) % len(boundary)]
+        delta = end - start
+        ET.SubElement(
+            plate,
+            "geom",
+            type="box",
+            name=f"plate_rim_{i}",
+            pos=numbers([*((start + end) / 2), base + rim_height / 2]),
+            size=numbers([np.linalg.norm(delta) / 2 + 0.00005, wall / 2, rim_height / 2]),
+            euler=f"0 0 {math.atan2(delta[1], delta[0])}",
+            rgba="0.4 0.68 0.84 1",
+        )
+
+
 def make_xml(spec: SceneSpec, cfg: SimConfig, seed: int) -> tuple[str, dict]:
     root = ET.parse(ASSET_DIR / "so101.xml").getroot()
     root.find("compiler").set("meshdir", str(ASSET_DIR / "assets"))
@@ -36,7 +98,52 @@ def make_xml(spec: SceneSpec, cfg: SimConfig, seed: int) -> tuple[str, dict]:
     if visual is None:
         visual = ET.SubElement(root, "visual")
     ET.SubElement(visual, "global", offwidth=str(cfg.width), offheight=str(cfg.height))
+    ET.SubElement(visual, "headlight", ambient="0.35 0.35 0.35", diffuse="0.6 0.6 0.6")
+    asset = root.find("asset")
+    ET.SubElement(
+        asset,
+        "texture",
+        name="daylight",
+        type="skybox",
+        builtin="gradient",
+        rgb1="0.55 0.72 0.88",
+        rgb2="0.92 0.95 0.98",
+        width="512",
+        height="3072",
+    )
+    ET.SubElement(
+        asset,
+        "texture",
+        name="ground_grid",
+        type="2d",
+        builtin="checker",
+        rgb1="0.72 0.75 0.78",
+        rgb2="0.79 0.82 0.85",
+        width="512",
+        height="512",
+    )
+    ET.SubElement(
+        asset,
+        "material",
+        name="ground_material",
+        texture="ground_grid",
+        texrepeat="2 2",
+        texuniform="true",
+        reflectance="0",
+    )
     world = root.find("worldbody")
+    # Infinite visual ground below the tabletop. Falling objects still cross the failure threshold.
+    ET.SubElement(
+        world,
+        "geom",
+        name="ground",
+        type="plane",
+        pos="0 0 -0.08",
+        size="0 0 0.01",
+        material="ground_material",
+        contype="0",
+        conaffinity="0",
+    )
     for item in ET.fromstring(f"<root>{spec.assets_xml}</root>"):
         root.find("asset").append(item)
     # Named camera target is stable across tasks.
@@ -48,20 +155,21 @@ def make_xml(spec: SceneSpec, cfg: SimConfig, seed: int) -> tuple[str, dict]:
         name="table_top",
         type="box",
         size="0.42 0.38 0.025",
-        rgba="0.5 0.5 0.5 1",
+        rgba="0.65 0.65 0.65 1",
         friction="0.8 0.005 0.0001",
     )
-    for name, pos in (("front", (0.65, -0.45, 0.45)), ("overview", (0.60, -0.65, 0.65))):
+    for name, pos in (("front", (0.35, 0, 0.30)), ("overview", (0.60, -0.65, 0.65))):
         camera_cfg = cfg.cameras.get(name, {})
         position = camera_cfg.get("position", pos)
-        target = camera_cfg.get("target", (0.16, 0, 0.06))
+        # A 30 cm horizontal and vertical drop gives front an exact 45 degree pitch.
+        target = camera_cfg.get("target", (0.05, 0, 0) if name == "front" else (0.16, 0, 0.06))
         ET.SubElement(
             world,
             "camera",
             name=name,
             pos=numbers(position),
             xyaxes=look_at(position, target),
-            fovy=str(camera_cfg.get("fovy", 48)),
+            fovy=str(camera_cfg.get("fovy", 60 if name == "front" else 48)),
         )
     wrist = root.find(".//camera[@name='wrist_cam']")
     wrist.set("name", "wrist")
@@ -92,14 +200,14 @@ def make_xml(spec: SceneSpec, cfg: SimConfig, seed: int) -> tuple[str, dict]:
             p = np.array(obj.position, dtype=float)
             if layout.get("enabled", False):
                 p[:2] += rng.uniform(
-                    -layout.get("position_jitter", 0.012), layout.get("position_jitter", 0.012), 2
+                    -layout.get("position_jitter", 0.005), layout.get("position_jitter", 0.005), 2
                 )
             p[2] = sizes[obj.name] / 2 + 0.001
             positions[obj.name] = p
         plate_xy = np.array(spec.plate_xy) if spec.plate_xy is not None else None
         if plate_xy is not None and layout.get("enabled", False):
             plate_xy += rng.uniform(
-                -layout.get("position_jitter", 0.012), layout.get("position_jitter", 0.012), 2
+                -layout.get("position_jitter", 0.005), layout.get("position_jitter", 0.005), 2
             )
         valid = all(0.10 < np.linalg.norm(p[:2]) < 0.31 for p in positions.values())
         if plate_xy is not None:
@@ -111,10 +219,7 @@ def make_xml(spec: SceneSpec, cfg: SimConfig, seed: int) -> tuple[str, dict]:
                     > (sizes[a.name] + sizes[b.name]) / 2 + 0.025
                 )
             if plate_xy is not None:
-                valid &= (
-                    np.linalg.norm(positions[a.name][:2] - plate_xy)
-                    > spec.plate_radius + sizes[a.name] + 0.01
-                )
+                valid &= spec.plate_distance(positions[a.name][:2] - plate_xy) > sizes[a.name] + 0.01
         if valid:
             break
     else:
@@ -122,7 +227,7 @@ def make_xml(spec: SceneSpec, cfg: SimConfig, seed: int) -> tuple[str, dict]:
             "Cannot sample collision-free reachable layout within 200 attempts; reduce randomization"
         )
     for obj in spec.objects:
-        yaw = rng.uniform(*layout.get("yaw_deg", [-10, 10])) if layout.get("enabled", False) else 0
+        yaw = rng.uniform(*layout.get("yaw_deg", [-5, 5])) if layout.get("enabled", False) else 0
         size = sizes[obj.name]
         mass = obj.mass * streams["physics"].uniform(*scales["physics"].get("mass_scale", [1, 1]))
         friction = streams["physics"].uniform(*scales["physics"].get("friction_scale", [1, 1]))
@@ -154,30 +259,7 @@ def make_xml(spec: SceneSpec, cfg: SimConfig, seed: int) -> tuple[str, dict]:
             "friction": friction,
         }
     if plate_xy is not None:
-        plate = ET.SubElement(world, "body", name="plate", pos=numbers([*plate_xy, 0]))
-        ET.SubElement(
-            plate,
-            "geom",
-            name="plate_bottom",
-            type="cylinder",
-            size=f"{spec.plate_radius} 0.003",
-            pos="0 0 0.003",
-            rgba="0.92 0.92 0.9 1",
-            friction="0.8 0.005 0.0001",
-        )
-        for i in range(32):
-            a = i * 2 * math.pi / 32
-            r = spec.plate_radius
-            ET.SubElement(
-                plate,
-                "geom",
-                type="box",
-                name=f"plate_rim_{i}",
-                pos=numbers([r * math.cos(a), r * math.sin(a), 0.009]),
-                size=numbers([0.003, r * math.tan(math.pi / 32) + 0.0005, 0.006]),
-                euler=f"0 0 {a}",
-                rgba="0.85 0.85 0.83 1",
-            )
+        add_plate(world, asset, spec, plate_xy)
         sampled["plate_xy"] = plate_xy.tolist()
     for item in ET.fromstring(f"<root>{spec.worldbody_xml}</root>"):
         world.append(item)

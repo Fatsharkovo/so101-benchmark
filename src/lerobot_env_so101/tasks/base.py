@@ -15,7 +15,7 @@ class ObjectSpec:
     color: tuple[float, float, float]
     position: tuple[float, float, float]
     size: float = 0.025
-    mass: float = 0.025
+    mass: float = 0.010
 
     def __post_init__(self):
         if self.size <= 0 or self.mass <= 0 or len(self.position) != 3:
@@ -26,14 +26,45 @@ class ObjectSpec:
 class SceneSpec:
     objects: list[ObjectSpec]
     plate_xy: tuple[float, float] | None = None
-    plate_radius: float = 0.060
+    # Radius for circles; half the outer side length for rounded squares.
+    plate_radius: float = 0.050
     # Additional MJCF worldbody elements for custom tasks.
     worldbody_xml: str = ""
     assets_xml: str = ""
+    plate_shape: str = "rounded_square"
+    plate_corner_radius: float = 0.012
+    plate_base_thickness: float = 0.002
+    plate_wall_thickness: float = 0.002
+    plate_rim_height: float = 0.006
 
     def __post_init__(self):
         if self.plate_radius <= 0 or len({o.name for o in self.objects}) != len(self.objects):
             raise ValueError("Scene requires a positive plate radius and unique object names")
+        if self.plate_shape not in ("circle", "rounded_square"):
+            raise ValueError("Unsupported plate shape")
+        if min(self.plate_base_thickness, self.plate_wall_thickness, self.plate_rim_height) <= 0:
+            raise ValueError("Plate thickness and rim height must be positive")
+        if self.plate_wall_thickness >= self.plate_radius:
+            raise ValueError("Plate wall must be thinner than half width")
+        if (
+            self.plate_shape == "rounded_square"
+            and not self.plate_wall_thickness < self.plate_corner_radius < self.plate_radius
+        ):
+            raise ValueError("Plate corner radius must exceed rim thickness and be smaller than half width")
+
+    def plate_distance(self, points):
+        """Signed distance in metres to the outer plate boundary, for centred XY points."""
+        import numpy as np
+
+        points = np.asarray(points)
+        if self.plate_shape == "circle":
+            return np.linalg.norm(points, axis=-1) - self.plate_radius
+        q = np.abs(points) - (self.plate_radius - self.plate_corner_radius)
+        return (
+            np.linalg.norm(np.maximum(q, 0), axis=-1)
+            + np.minimum(np.max(q, axis=-1), 0)
+            - self.plate_corner_radius
+        )
 
 
 @dataclass

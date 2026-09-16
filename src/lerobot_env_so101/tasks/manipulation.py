@@ -50,7 +50,7 @@ class ManipulationTask(Task):
 
 class PlaceInPlate(ManipulationTask):
     def scene(self) -> SceneSpec:
-        positions = [(0.12, -0.16), (0.20, -0.145), (0.275, -0.08), (0.185, -0.075), (0.25, 0.0)]
+        positions = [(0.14, -0.10), (0.20, -0.105), (0.235, -0.05), (0.15, -0.035), (0.21, 0.015)]
         positions = dict(zip(COLORS, positions, strict=True))
         positions.update(self.params.get("positions", {}))
         names = self.params.get("colors", list(COLORS))
@@ -62,13 +62,20 @@ class PlaceInPlate(ManipulationTask):
                 COLORS[name],
                 (*positions[name], 0.014),
                 self.params.get("cube_size", 0.025),
-                self.params.get("cube_mass", 0.025),
+                self.params.get("cube_mass", 0.010),
             )
             for name in names
         ]
         self.stable_objects = [self.params["target"]]
         return SceneSpec(
-            objects, tuple(self.params.get("plate_xy", [0.18, 0.10])), self.params.get("plate_radius", 0.060)
+            objects,
+            tuple(self.params.get("plate_xy", [0.14, 0.13])),
+            self.params.get("plate_radius", 0.050),
+            plate_shape=self.params.get("plate_shape", "rounded_square"),
+            plate_corner_radius=self.params.get("plate_corner_radius", 0.012),
+            plate_base_thickness=self.params.get("plate_base_thickness", 0.002),
+            plate_wall_thickness=self.params.get("plate_wall_thickness", 0.002),
+            plate_rim_height=self.params.get("plate_rim_height", 0.006),
         )
 
     def evaluate(self, env) -> TaskStatus:
@@ -83,10 +90,18 @@ class PlaceInPlate(ManipulationTask):
 class StackBlueOnRed(ManipulationTask):
     def scene(self) -> SceneSpec:
         self.stable_objects = [self.params["target"], self.params["base"]]
+        positions = {"blue": (0.19, -0.045), "red": (0.19, 0.045)}
+        positions.update(self.params.get("positions", {}))
         return SceneSpec(
             [
-                ObjectSpec("blue", COLORS["blue"], (0.20, -0.10, 0.014)),
-                ObjectSpec("red", COLORS["red"], (0.18, 0.08, 0.014)),
+                ObjectSpec(
+                    name,
+                    COLORS[name],
+                    (*positions[name], 0.014),
+                    self.params.get("cube_size", 0.025),
+                    self.params.get("cube_mass", 0.010),
+                )
+                for name in ("blue", "red")
             ]
         )
 
