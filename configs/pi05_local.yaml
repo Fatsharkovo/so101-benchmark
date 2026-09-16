@@ -1,0 +1,11 @@
+tasks: [stack_blue_on_red]
+episodes: 1
+mode: sync
+policy:
+  backend: local
+  type: pi05
+  checkpoint: ../deploy/checkpoints/full/004000/pretrained_model
+  device: cuda
+  chunk_size: 50
+sim:
+  render_backend: egl

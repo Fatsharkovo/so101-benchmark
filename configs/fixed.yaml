@@ -1,0 +1,6 @@
+tasks: [all]
+episodes: 1
+video: true
+sim:
+  randomization:
+    layout: {enabled: false}

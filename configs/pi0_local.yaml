@@ -1,0 +1,9 @@
+tasks: [all]
+policy:
+  backend: local
+  type: pi0
+  checkpoint: "" # Supply a LeRobot SO-101 checkpoint with saved processors.
+  device: cuda
+  chunk_size: 50
+sim:
+  render_backend: egl

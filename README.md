@@ -1,0 +1,211 @@
+# SO-101 仿真 Benchmark
+
+独立开发的 MuJoCo / Gymnasium 环境，通过 `lerobot_env_so101` 插件接入同级 LeRobot。
+提供五色指令入盘和蓝块叠红块，共六项任务；支持 π0、π0.5、SmolVLA 的本地和远程推理。
+
+![实际三视角窗口](docs/three_views.png)
+
+## 安装与快速运行
+
+以下命令均在 `so101_benchmark/` 中执行，需要 Python 3.12+。项目固定 MuJoCo 3.3.7，
+SO-101 资产已经随包提供，模型权重通过路径引用。
+
+```bash
+# 仿真、视频输出和测试；不安装策略模型依赖
+uv sync --locked --extra test
+
+# 需要接入 LeRobot 和模型时
+uv sync --locked --extra policies --extra remote --extra test
+
+uv run so101-bench list
+uv run so101-bench preview --config configs/fixed.yaml
+uv run so101-bench preview --config configs/fixed.yaml --display
+uv run so101-bench eval --config configs/benchmark.yaml
+```
+
+本次开发已准备 `.venv`，它复用了现有 `soarm101` 环境的 PyTorch/LeRobot，
+新增依赖只安装在本项目虚拟环境。可以直接使用：
+
+```bash
+uv run --no-sync so101-bench preview --display
+uv run --no-sync so101-bench eval --config configs/smoke.yaml
+```
+
+`smoke.yaml` 关闭相机渲染与视频，用于快速运行物理脚本基线；它不适用于视觉模型。
+基线读取物体真实位置，通过 IK 和夹爪接触操作方块，成绩用于验证环境可完成性。
+
+无窗口默认使用 OSMesa 软件渲染，需要系统提供 `libOSMesa.so`。Ubuntu 可安装
+`libosmesa6`。有 NVIDIA GPU 时，将 `sim.render_backend` 设为 `egl`。
+`--display` 自动选择 GLFW，需要可用的桌面显示服务；采集端不需要加载模型权重。
+
+## 任务与成功规则
+
+| ID | 指令目标 | 场景 |
+| --- | --- | --- |
+| `place_red_in_plate` | 红块入盘 | 红、蓝、绿、黄、橙五块和一个盘子 |
+| `place_blue_in_plate` | 蓝块入盘 | 同上 |
+| `place_green_in_plate` | 绿块入盘 | 同上 |
+| `place_yellow_in_plate` | 黄块入盘 | 同上 |
+| `place_orange_in_plate` | 橙块入盘 | 同上 |
+| `stack_blue_on_red` | 蓝块放在红块上 | 红蓝两块 |
+
+五色任务在相同 seed 下具有相同布局，各自绑定目标 ID 和英文指令，逐项计分。
+目标需要有机械臂接触和离桌抬升记录。入盘要求整个目标在盘沿内并得到盘面支撑；
+其他方块不能占据盘内区域。允许碰动其他方块、误放后取出纠正。
+
+叠放要求蓝块在红块上获得支撑，红块仍在桌上，两块直立。默认中心横向偏差小于
+较小方块边长的 30%，高度误差小于 4 mm。成功时机械臂必须脱离所有方块，目标
+（叠放时两块）连续稳定 1 秒；线速度阈值 0.01 m/s，角速度阈值 0.1 rad/s。
+抬升、支撑、稳定计时均由物理状态判定；未释放、掠过盘面和短暂接触不能成功。
+方块跌落桌下为终止失败，时间耗尽为截断失败。默认不要求机械臂复位。
+
+默认方块边长 25 mm、质量 25 g，盘子半径 60 mm；控制频率 30 Hz，物理频率
+600 Hz，每回合最多 60 秒。所有评测使用固定的 MuJoCo 资产版本和采样参数记录。
+
+## 配置、推理和结果
+
+配置参考 `configs/benchmark.yaml`。CLI 支持覆盖任务、回合数、seed、模式、输出、显示和视频：
+
+```bash
+uv run so101-bench eval --config configs/benchmark.yaml \
+  --task place_blue_in_plate,stack_blue_on_red --episodes 10 --seed 0 --no-display
+
+uv run so101-bench eval --config configs/pi05_local.yaml --mode sync
+uv run so101-bench eval --config configs/pi05_remote.yaml --mode realtime
+```
+
+`policy.backend` 为 `scripted/local/remote`；模型类型为 `pi0/pi05/smolvla`。
+`pi0_local.yaml`、`smolvla_local.yaml` 等待填入你自己的 SO-101 检查点。
+模型应携带已保存的 processor 与归一化统计，采用六维 SO-101 绝对关节控制。
+状态/动作顺序为 `shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll, gripper`；
+前五维为角度，夹爪为 `0–100`。内部统一转换成 MuJoCo 弧度，并取关节限位。
+`sim.joint_signs` 和 `sim.joint_offsets_deg` 用于后续实机零位映射，默认标准仿真标定。
+
+两路图像是 RGB uint8，默认 640×480。名称不同的检查点可配置：
+
+```yaml
+policy:
+  rename_map:
+    observation.images.front: observation.images.camera1
+    observation.images.wrist: observation.images.camera2
+```
+
+三类策略使用 LeRobot 自身的配置、`predict_action_chunk` 和 pre/postprocessor，
+包括动作反归一化及空相机处理。首版支持它们标准的单帧观测配置。
+本地检查点路径和输出路径相对运行目录；远程检查点路径由服务器解释。
+
+远程示例使用独立 `127.0.0.1:8081` 服务，跨机器时填写实际地址。服务器必须使用
+与客户端匹配的 LeRobot 版本，以及相同控制频率；`policy.server_fps` 默认为 30，
+客户端会检查返回动作的时间间隔。PolicyServer 是单客户端会话，运行 benchmark
+期间使用专用实例；每个回合的 `Ready` / 策略设置会清理该实例的状态。
+
+```bash
+# 在持有模型与 GPU 的服务器上启动独立实例
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+uv run python -m lerobot.async_inference.policy_server \
+  --host=127.0.0.1 --port=8081 --fps=30
+```
+
+同步模式暂停物理时间等待推理。实时模式保持控制步进，剩余动作到一半时请求下一段，
+新段覆盖重叠的未来动作，过时动作丢弃；没有可用动作时保持上一目标，连续 10 秒
+没有新动作则结束回合。模型加载和首段准备放在回合计时之外，并单独记录 setup 时间。
+运行器保持单请求在途，并按回合 ID 拒绝旧结果。两种模式通过独立运行目录分别统计。
+
+随机化分为五组，每组独立开关和范围：
+
+- `layout`：物体/盘子位置扰动和方块朝向。
+- `appearance`：灯光亮度与桌面灰度，保持方块语义颜色。
+- `camera`：front/wrist 的位置和旋转扰动，overview 保持固定。
+- `size`：方块尺寸比例。
+- `physics`：方块质量和摩擦比例。
+
+默认只开启布局随机化；关闭组不会消耗其他组的随机数序列。无效/重叠布局有采样上限，
+超过上限明确报错。更大的随机化范围需重新检查任务可达性和物理基线成功率。
+相机可以通过 `sim.cameras.front/overview` 的 `position/target/fovy` 调整，
+`sim.cameras.wrist` 支持 `pos/euler/fovy`（局部米/弧度，fovy 为度）。
+
+每次运行输出：
+
+```text
+outputs/<时间戳>_<模式>_<后端>/
+  config.json, provenance.json, results.json, episodes.csv
+  <任务>/seed_<编号>/
+    metadata.json, scene.xml, summary.json, transitions.jsonl
+    overview.mp4, front.mp4, wrist.mp4
+```
+
+每条 transition 保存动作前状态/图像对应的完整 MuJoCo 快照、请求动作、实际执行动作、
+动作后的指标及 sim/wall 时间。视频一帧对应一条 transition。显示窗口左键旋转第三视角、
+右键平移、滚轮缩放、Esc 关闭；front/wrist 显示原始策略输入帧。
+overview 录像采用固定观察相机，不受鼠标改变视角影响，便于复现比较。
+
+报告包含逐任务成功率、推理耗时、过期动作、断供、控制超时和实际仿真速度。
+实时速度低于目标的 90% 时标记 `realtime_timing_valid=false`，另提供仅纳入有效
+时间预算回合的统计。模型实际任务分数与脚本基线成绩分别记录。
+
+```bash
+# 按存储的状态重建三路视频，也可加 --display
+uv run so101-bench replay --episode-dir outputs/<运行>/<任务>/seed_000000
+```
+
+回放使用原配置和已记录的关节/物体状态；请保留任务定义与本项目版本。
+`scene.xml` 同时保存用于审计，目前回放仍从任务定义重建场景，不保证跨版本兼容。
+
+## 扩展任务和未来遥操作
+
+任务由 YAML 指定 ID、Python 类、指令和参数。内置任务目录自动扫描；用户目录通过
+`task_paths` 配置，相对 YAML 所在目录解析。ID 必须唯一；无需修改中央注册表。
+
+```yaml
+# 自定义任务目录中的 blue_small_plate.yaml
+id: blue_small_plate
+class: lerobot_env_so101.tasks.manipulation:PlaceInPlate
+instruction: Pick up the blue cube and place it in the small plate.
+params:
+  target: blue
+  colors: [red, blue, green, yellow, orange]
+  cube_size: 0.025
+  cube_mass: 0.025
+  plate_radius: 0.05
+  plate_xy: [0.18, 0.10]
+  stable_seconds: 1.0
+```
+
+新行为继承 `Task`，实现 `scene()` 和 `evaluate(env)`，需要每回合状态时实现 `reset(env)`。
+`SceneSpec` 定义物体和盘子，也允许通过 `assets_xml/worldbody_xml` 添加自定义 MJCF。
+任务的 Python 模块应通过本地可编辑包安装，YAML 的 `class` 按模块路径导入。
+`evaluate` 返回 `TaskStatus(success, failure, metrics)`；模型后端、三视角窗口、视频和
+报告都不需要修改。`make_oracle` 是可选的脚本基线接口，使用模型推理不要求实现它。
+
+LeRobot 会自动发现本包的 `so101_bench` 环境配置，可从 `lerobot-eval` 使用：
+
+```bash
+uv run lerobot-eval --env.type=so101_bench --env.task=stack_blue_on_red \
+  --policy.path=../deploy/checkpoints/full/004000/pretrained_model \
+  --eval.n_episodes=1 --eval.batch_size=1
+```
+
+未来采集端使用实体 Leader，仿真端使用 `SO101SimRobot`。它提供
+`connect/get_observation/send_action/reset_episode/disconnect` 和 LeRobot 标准特征描述。
+每次 `send_action` 推进一个控制周期，外层 Leader 采集循环负责 30 Hz 节拍；
+Leader 必须使用匹配的角度与夹爪标定。可将已有 Leader 的动作字典直接传入仿真
+Follower，不需要实体 Follower。`recording.dataset_features/dataset_frame` 保持
+LeRobotDataset 格式；记录实际执行动作。第三视角供查看，训练图像默认仅 front/wrist。
+
+当前已经实现仿真 Follower 和可替换 `EpisodeSink` 接口，实体 Leader 的连接、
+录制/重录交互和采集 UI 控制属于后续工作。没有运行过任何真实机器人客户端。
+
+## 验证
+
+```bash
+uv run pytest tests -q
+uv run ruff check src tests tools
+uv run ruff format --check src tests tools
+```
+
+详细结果见 [VALIDATION.md](VALIDATION.md)。π0 和 SmolVLA 适配已提供，尚未取得匹配
+检查点进行真实权重验证。新增/修改任务后，先检查成功判定与脚本基线，再运行模型评测。
+
+资产来源、固定版本和 SHA256 记录位于 `assets/so101/manifest.json`（包内）；模型为
+Apache-2.0，原始许可证保留在资产目录。场景构建时增加桌面、任务物体、相机，使用
+600 Hz 物理步长与 multiccd 碰撞求解；原始机器人文件保持原样。

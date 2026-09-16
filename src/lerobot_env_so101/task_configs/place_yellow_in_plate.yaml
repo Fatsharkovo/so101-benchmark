@@ -1,0 +1,6 @@
+id: place_yellow_in_plate
+class: lerobot_env_so101.tasks.manipulation:PlaceInPlate
+instruction: Pick up the yellow cube and place it in the plate.
+params:
+  target: yellow
+  stable_seconds: 1.0

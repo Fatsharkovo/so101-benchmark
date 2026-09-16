@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lerobot_env_so101"
+version = "0.1.0"
+description = "Extensible SO-101 MuJoCo benchmark for LeRobot"
+requires-python = ">=3.12"
+dependencies = ["mujoco==3.3.7", "numpy>=2,<2.3", "gymnasium>=1.1.1,<2", "PyYAML>=6", "scipy>=1.14", "av>=15,<16", "glfw>=2.8", "Pillow>=10"]
+
+[project.optional-dependencies]
+lerobot = ["lerobot[evaluation]"]
+policies = ["lerobot[pi,smolvla,evaluation]"]
+remote = ["lerobot[grpcio-dep]"]
+test = ["pytest>=8", "ruff>=0.12"]
+
+[project.scripts]
+so101-bench = "lerobot_env_so101.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+lerobot_env_so101 = ["task_configs/*.yaml", "assets/so101/*", "assets/so101/assets/*"]
+
+[tool.uv.sources]
+lerobot = {path = "../lerobot", editable = true}
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: requires the sibling LeRobot installation", "model: requires actual model weights and a suitable device"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]

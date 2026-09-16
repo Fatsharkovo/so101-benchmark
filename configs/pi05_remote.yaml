@@ -1,0 +1,12 @@
+tasks: [stack_blue_on_red]
+episodes: 1
+mode: sync
+policy:
+  backend: remote
+  type: pi05
+  server: 127.0.0.1:8081
+  checkpoint: /home/yrd/workspace/my_projects/lerobot-pi05/deploy/checkpoints/full/004000/pretrained_model
+  device: cuda
+  chunk_size: 50
+sim:
+  render_backend: osmesa

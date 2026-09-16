@@ -1,0 +1,36 @@
+tasks: [all]
+mode: sync
+episodes: 10
+seed: 0
+display: false
+video: true
+output: outputs
+policy:
+  backend: scripted
+sim:
+  control_hz: 30
+  physics_hz: 600
+  episode_seconds: 60
+  width: 640
+  height: 480
+  render_backend: osmesa
+  randomization:
+    layout:
+      enabled: true
+      position_jitter: 0.012
+      yaw_deg: [-10, 10]
+    appearance:
+      enabled: false
+      brightness: [0.8, 1.2]
+      table_gray: [0.35, 0.65]
+    camera:
+      enabled: false
+      position_jitter: 0.005
+      rotation_deg: 2.0
+    size:
+      enabled: false
+      scale: [0.9, 1.1]
+    physics:
+      enabled: false
+      mass_scale: [0.8, 1.2]
+      friction_scale: [0.8, 1.2]
