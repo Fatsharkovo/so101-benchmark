@@ -20,6 +20,8 @@ class CameraTuningSession:
         if len(config.tasks) != 1:
             raise ValueError("Camera tuning needs one task; use --task to select it")
         task = config.tasks[0] if config.tasks != ["all"] else "stack_blue_on_red"
+        # Use a closed gripper for camera alignment in this preview only.
+        config.sim.home_degrees[-1] = 0.0
         config.sim.randomization.setdefault("camera", {})["enabled"] = False
         front_override = config.sim.cameras.pop("front", None)
         self.env = SO101Env(task, config.sim, config.task_paths)
