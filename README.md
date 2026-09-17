@@ -136,7 +136,26 @@ uv run python -m lerobot.async_inference.policy_server \
 相机可以通过 `sim.cameras.front/overview` 的 `position/target/fovy` 调整，
 `sim.cameras.wrist` 支持 `pos/euler/fovy`（局部米/弧度，fovy 为度）。
 front 默认位置为 `[0.45, 0, 0.35]` 米（基座前方为 +X），
-向下朝机械臂方向俯视 60°，垂直视场角为 60°；光轴与桌面相交于约 `[0.2479, 0, 0]`。
+向下朝机械臂方向俯视 60°，垂直视场角为 45°；光轴与桌面相交于约 `[0.2479, 0, 0]`。
+默认姿态写在 `task_scenes/common.xml`：
+
+```xml
+<camera name="front" pos="0.45 0 0.35"
+        xyaxes="0 1 0 -0.8660254037844386 0 0.5" fovy="45" />
+```
+
+front 与 wrist 的默认垂直视场角分别为 45° 和 65°，按当前调试设置使用。
+`xyaxes` 是相机局部 X、Y 轴在世界坐标中的方向，镜头沿局部 -Z 看出去。
+下俯角为 θ 时，此处可写 `0 1 0 -sin(θ) 0 cos(θ)`；`fovy` 是视场角，不是下俯角。
+遥操作主窗口默认显示青色相机示意外壳/视野框、黄色光心/朝向箭头，位置和朝向
+直接跟随最终仿真相机。外壳为示意尺寸，不代表实物相机外形；仅在主窗口渲染，
+不参与碰撞，也不写入 front/wrist 图像。可通过 `sim.cameras.front.show_pose: false` 关闭。
+
+从基座开始计数，第二舵机为 `shoulder_lift`；其外壳和安装座碰撞体位于 `shoulder`，
+命名为 `second_servo_housing`、`second_servo_mount`。它们设置 `friction="0 0 0"`、
+`condim="1"`、`priority="2"`，接触仅保留法向约束；高优先级避免对方几何的摩擦覆盖。
+长臂 `upper_arm`、关节自身 `frictionloss` 及阻尼不变。零摩擦不会取消实体碰撞。
+
 
 每次运行输出：
 

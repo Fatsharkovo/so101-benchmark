@@ -83,9 +83,9 @@
         <joint axis="0 0 1" name="shoulder_pan" type="hinge" range="-1.91986 1.91986" class="sts3215" />
         <inertial pos="-0.0307604 -1.7e-05 -0.0252713" mass="0.100006" fullinertia="8.3759e-05 8.10403e-05 2.39783e-05 7.55525e-08 -1.16342e-06 1.54663e-07" />
         <geom type="mesh" class="visual" pos="-0.030399 0.000422 -0.0417" quat="1 1 1 -1" mesh="sts3215_03a_v1" material="sts3215_03a_v1_material" />
-        <geom type="box" class="collision" pos="-0.030399 0.000422 -0.0387" quat="1 1 1 -1" size="0.023 0.015 0.01" />
+        <geom name="second_servo_housing" friction="0 0 0" condim="1" priority="2" type="box" class="collision" pos="-0.030399 0.000422 -0.0387" quat="1 1 1 -1" size="0.023 0.015 0.01" />
         <geom type="mesh" class="visual" pos="-0.067599 -0.0001778 0.01585" quat="1 1 -1 1" mesh="motor_holder_so101_base_v1" material="motor_holder_so101_base_v1_material" />
-        <geom type="box" class="collision" pos="-0.025 0 0.0" quat="1 1 -1 1" size="0.038 0.025 0.02" />
+        <geom name="second_servo_mount" friction="0 0 0" condim="1" priority="2" type="box" class="collision" pos="-0.025 0 0.0" quat="1 1 -1 1" size="0.038 0.025 0.02" />
         <geom type="mesh" class="visual" pos="0.012201 2.2e-05 0.0464" quat="1 -1 0 0" mesh="rotation_pitch_so101_v1" material="rotation_pitch_so101_v1_material" />
         <body name="upper_arm" pos="-0.0303992 -0.0182778 -0.0542" quat="1 -1 -1 -1">
           <joint axis="0 0 1" name="shoulder_lift" type="hinge" range="-1.7453293 1.7453293" class="sts3215" />
@@ -157,7 +157,7 @@
     <body name="table" pos="0.1 0 -0.025">
       <geom name="table_top" type="box" size="0.42 0.38 0.025" rgba="0.65 0.65 0.65 1" friction="0.8 0.005 0.0001" />
     </body>
-    <camera name="front" pos="0.45 0 0.35" xyaxes="0 1 0 -0.8660254037844386 0 0.5" fovy="60" />
+    <camera name="front" pos="0.45 0 0.35" xyaxes="0 1 0 -0.8660254037844386 0 0.5" fovy="45" />
     <camera name="overview" pos="0.6 -0.65 0.65" xyaxes="0.8281094721359367 0.5605664119074031 -0.0 -0.33681817639009803 0.49757230603082686 0.7993593161553908" fovy="48" />
   </worldbody>
   <actuator>
