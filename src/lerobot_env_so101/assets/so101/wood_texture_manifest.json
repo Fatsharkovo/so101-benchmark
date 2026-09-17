@@ -6,8 +6,10 @@
   "license": "CC0-1.0",
   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
   "provider_license": "https://docs.ambientcg.com/license/",
-  "file": "assets/Wood049_1K_Color.png",
-  "sha256": "2590dd053fb000d395259d645ec62ee08706fe991202390c3e43791295e3ea3c",
-  "modifications": "None; original 1024x1024 color map extracted from 1K-PNG archive.",
-  "usage": "MuJoCo table color texture; no displacement or physics changes."
+  "file": "assets/Wood049_1K_Color_Rotated90.png",
+  "sha256": "8fadcafd37fc5736de29f0525dab8a8a031254f6b462f587426b8c70d4a97ea1",
+  "modifications": "Color map rotated 90 degrees clockwise, lossless pixel transpose. Original retained for historical scene replay.",
+  "usage": "MuJoCo table color texture; no displacement or physics changes.",
+  "original_file": "assets/Wood049_1K_Color.png",
+  "original_sha256": "2590dd053fb000d395259d645ec62ee08706fe991202390c3e43791295e3ea3c"
 }

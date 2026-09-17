@@ -96,7 +96,7 @@ def _base_xml(spec: SceneSpec, cfg: SimConfig) -> ET.Element:
     root.find("compiler").set("texturedir", str(ASSET_DIR / "assets"))
     for material in root.findall("asset/material"):
         if not material.get("name", "").startswith("sts3215_"):
-            material.attrib.update(rgba="0.82 0.82 0.82 1", specular="0.1", shininess="0.1")
+            material.attrib.update(rgba="0.92 0.92 0.92 1", specular="0.1", shininess="0.1")
     # Share the editable wrist attachment with XML scenes; retain upstream robot assets.
     mount_parent = root.find(".//body[@name='camera_mount']/..")
     mount_parent.remove(mount_parent.find("body[@name='camera_mount']"))
@@ -123,7 +123,7 @@ def _base_xml(spec: SceneSpec, cfg: SimConfig) -> ET.Element:
     ET.SubElement(visual, "global", offwidth=str(cfg.width), offheight=str(cfg.height))
     ET.SubElement(visual, "headlight", ambient="0.35 0.35 0.35", diffuse="0.6 0.6 0.6")
     asset = root.find("asset")
-    ET.SubElement(asset, "texture", name="table_wood", type="2d", file="Wood049_1K_Color.png")
+    ET.SubElement(asset, "texture", name="table_wood", type="2d", file="Wood049_1K_Color_Rotated90.png")
     ET.SubElement(
         asset,
         "material",
