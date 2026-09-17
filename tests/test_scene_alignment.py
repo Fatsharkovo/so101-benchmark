@@ -31,8 +31,8 @@ def test_front_camera_pose_and_ten_gram_cubes(task):
     try:
         env.reset(seed=0)
         np.testing.assert_allclose(env.data.cam("front").xpos, [0.45, 0, 0.35])
-        assert env.model.cam("front").fovy[0] == pytest.approx(86)
-        assert env.model.cam("wrist").fovy[0] == pytest.approx(90)
+        assert env.model.cam("front").fovy[0] == pytest.approx(45)
+        assert env.model.cam("wrist").fovy[0] == pytest.approx(65)
         direction = -env.data.cam("front").xmat.reshape(3, 3)[:, 2]
         np.testing.assert_allclose(direction, np.array([-0.5, 0, -np.sqrt(3) / 2]), atol=1e-8)
         for name in env.object_sizes:

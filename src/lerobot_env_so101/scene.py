@@ -180,13 +180,13 @@ def _base_xml(spec: SceneSpec, cfg: SimConfig) -> ET.Element:
             name=name,
             pos=numbers(position),
             xyaxes=look_at(position, target),
-            fovy=str(camera_cfg.get("fovy", 86 if name == "front" else 48)),
+            fovy=str(camera_cfg.get("fovy", 45 if name == "front" else 48)),
         )
     wrist = root.find(".//camera[@name='wrist_cam']")
     wrist.set("name", "wrist")
     for attr in ("resolution", "sensorsize", "focal"):
         wrist.attrib.pop(attr, None)
-    wrist.set("fovy", str(cfg.cameras.get("wrist", {}).get("fovy", 90)))
+    wrist.set("fovy", str(cfg.cameras.get("wrist", {}).get("fovy", 65)))
     for attr in ("pos", "euler"):
         if attr in cfg.cameras.get("wrist", {}):
             wrist.set(attr, numbers(cfg.cameras["wrist"][attr]))

@@ -128,7 +128,7 @@
                 <geom name="fixed_jaw_box7" class="collision_gripper" type="box" size="0.001 0.01 0.008" pos="-0.0143 0 -0.053" />
                 <site group="3" name="gripperframe" pos="0.012 -0.000218 -0.098127" quat="1 0 1 0" />
                 <body name="camera_mount">
-                  <camera name="wrist" mode="fixed" pos="0.0 0.055 -0.045" euler="-0.57 0 0" fovy="90" />
+                  <camera name="wrist" mode="fixed" pos="0.0 0.055 -0.045" euler="-0.57 0 0" fovy="65" />
                   <geom type="mesh" mass="0.012" class="visual" pos="0 -0.000218 0.00095" quat="0 1 0 0" mesh="wrist_roll_follower_so101_camera_mount" material="wrist_roll_follower_so101_v1_material" />
                   <geom name="camera_box1" class="collision_gripper" type="box" size="0.015 0.015 0.003" pos="-0.0025 0.03 -0.03" />
                   <geom name="camera_box2" class="collision_gripper" type="box" size="0.021 0.021 0.003" pos="-0.001 0.06 -0.04" euler="-0.55 0 0" />
@@ -157,7 +157,7 @@
     <body name="table" pos="0.1 0 -0.025">
       <geom name="table_top" type="box" size="0.42 0.38 0.025" rgba="0.65 0.65 0.65 1" friction="0.8 0.005 0.0001" />
     </body>
-    <camera name="front" pos="0.45 0 0.35" xyaxes="0 1 0 -0.8660254037844386 0 0.5" fovy="86" />
+    <camera name="front" pos="0.45 0 0.35" xyaxes="0 1 0 -0.8660254037844386 0 0.5" fovy="45" />
     <camera name="overview" pos="0.6 -0.65 0.65" xyaxes="0.8281094721359367 0.5605664119074031 -0.0 -0.33681817639009803 0.49757230603082686 0.7993593161553908" fovy="48" />
   </worldbody>
   <actuator>

@@ -136,15 +136,15 @@ uv run python -m lerobot.async_inference.policy_server \
 相机可以通过 `sim.cameras.front/overview` 的 `position/target/fovy` 调整，
 `sim.cameras.wrist` 支持 `pos/euler/fovy`（局部米/弧度，fovy 为度）。
 front 默认位置为 `[0.45, 0, 0.35]` 米（基座前方为 +X），
-向下朝机械臂方向俯视 60°，垂直视场角为 86°；光轴与桌面相交于约 `[0.2479, 0, 0]`。
+向下朝机械臂方向俯视 60°，垂直视场角为 45°；光轴与桌面相交于约 `[0.2479, 0, 0]`。
 默认姿态写在 `task_scenes/common.xml`：
 
 ```xml
 <camera name="front" pos="0.45 0 0.35"
-        xyaxes="0 1 0 -0.8660254037844386 0 0.5" fovy="86" />
+        xyaxes="0 1 0 -0.8660254037844386 0 0.5" fovy="45" />
 ```
 
-front 与 wrist 的默认垂直视场角分别为 86° 和 90°，按用户提供的商家参数设置。
+front 与 wrist 的默认垂直视场角分别为 45° 和 65°，按当前调试设置使用。
 `xyaxes` 是相机局部 X、Y 轴在世界坐标中的方向，镜头沿局部 -Z 看出去。
 下俯角为 θ 时，此处可写 `0 1 0 -sin(θ) 0 cos(θ)`；`fovy` 是视场角，不是下俯角。
 遥操作主窗口默认显示青色相机示意外壳/视野框、黄色光心/朝向箭头，位置和朝向
