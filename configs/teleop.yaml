@@ -1,0 +1,11 @@
+# Smooth Leader targets across the 600 Hz physics steps; camera profile loads at startup.
+tasks: [stack_blue_on_red]
+episodes: 1
+video: true
+sim:
+  interpolate_actions: true
+  randomization:
+    layout: {enabled: false}
+recording:
+  repo_id: ""
+  writer_python: ""

@@ -243,7 +243,7 @@ export SO101_LEADER_PORT="/dev/serial/by-id/usb-YOUR_LEADER_DEVICE"
 export SO101_LEADER_ID="YOUR_EXISTING_LEADER_ID"
 
 env -u PYTHONPATH uv run --no-sync python tools/teleoperate.py \
-  --config configs/fixed.yaml \
+  --config configs/teleop.yaml \
   --port "$SO101_LEADER_PORT" \
   --leader-id "$SO101_LEADER_ID" \
   --leader-python "$SO101_LEADER_PYTHON" \
@@ -296,6 +296,28 @@ v3.0 写入接口；写入失败或队列满会停止采集，不会静默丢帧
 
 **遥操作输出不能直接传给 `so101-bench replay`**：它没有评测回放所需的
 `transitions.jsonl`。请用 LeRobot 数据集工具读取 `dataset/`，或直接查看其中的视频。
+
+### 4.4 运动平滑设置
+
+遥操作默认使用 `configs/teleop.yaml`，固定布局并开启：
+
+```yaml
+sim:
+  interpolate_actions: true
+```
+
+每个 30 Hz 控制周期内，将上一个目标角度到新目标的变化均匀分配到 20 个 600 Hz
+物理步，减少抬起/放回时阶跃目标激发的振荡。周期结束时准确到达新的控制目标；
+此处“到达”指控制目标，实际关节仍由物理仿真决定。增加的目标过渡时间最长为一个
+控制周期（约 33 ms），不改变刚度、阻尼、力矩限制或碰撞摩擦。
+
+插值从上一条控制目标开始，不从实际关节位置开始，避免夹持物体时反复撤回夹紧目标。
+R/Space 重置也恢复插值起点。数据集 `action` 仍记录当前周期的最终目标，配置和回合
+元数据记录插值开关；用该数据训练的策略在本项目中评测时，建议也显式开启同一设置。
+
+需要与旧控制比较时，设置 `interpolate_actions: false`，或使用
+`--config configs/fixed.yaml`。普通评测默认保持旧的阶跃控制，历史配置未声明此字段时为 false。
+此设置针对目标变化引发的运动波动，不保证消除所有自碰撞或桌面接触造成的抖动。
 
 ## 5. 任务与成功判定
 
@@ -350,7 +372,8 @@ env -u PYTHONPATH uv run --no-sync so101-bench eval \
 
 | 配置 | 用途 |
 | --- | --- |
-| `configs/fixed.yaml` | 固定布局，适合调试/遥操作 |
+| `configs/teleop.yaml` | 遥操作默认配置，固定布局、开启目标插值 |
+| `configs/fixed.yaml` | 固定布局，旧阶跃控制，适合对比调试 |
 | `configs/smoke.yaml` | 无图像、无视频的脚本检查 |
 | `configs/benchmark.yaml` | 六任务评测和随机化参数示例 |
 | `configs/pi05_local.yaml` | π0.5 本地推理示例 |
