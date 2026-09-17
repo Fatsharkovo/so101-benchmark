@@ -36,13 +36,16 @@ def read_xml(path: Path) -> ET.Element:
             raise ValueError(f"Recursive MJCF include: {source}")
         root = ET.parse(source).getroot()
         compiler = root.find("compiler")
-        if compiler is not None and compiler.get("meshdir"):
-            meshes = (source.parent / compiler.get("meshdir")).resolve()
-            if not meshes.is_dir() and source.name == "common.xml":
-                from .scene import ASSET_DIR
+        if compiler is not None:
+            for attribute in ("meshdir", "texturedir"):
+                if not compiler.get(attribute):
+                    continue
+                directory = (source.parent / compiler.get(attribute)).resolve()
+                if not directory.is_dir() and source.name == "common.xml":
+                    from .scene import ASSET_DIR
 
-                meshes = ASSET_DIR / "assets"
-            compiler.set("meshdir", str(meshes))
+                    directory = ASSET_DIR / "assets"
+                compiler.set(attribute, str(directory))
 
         def visit(parent):
             for child in list(parent):
