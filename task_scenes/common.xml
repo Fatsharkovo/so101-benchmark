@@ -157,7 +157,7 @@
     <body name="table" pos="0.1 0 -0.025">
       <geom name="table_top" type="box" size="0.42 0.38 0.025" rgba="0.65 0.65 0.65 1" friction="0.8 0.005 0.0001" />
     </body>
-    <camera name="front" pos="0.30 0 0.35" xyaxes="0 1 0 -0.8660254037844386 0 0.5" fovy="60" />
+    <camera name="front" pos="0.45 0 0.35" xyaxes="0 1 0 -0.8660254037844386 0 0.5" fovy="60" />
     <camera name="overview" pos="0.6 -0.65 0.65" xyaxes="0.8281094721359367 0.5605664119074031 -0.0 -0.33681817639009803 0.49757230603082686 0.7993593161553908" fovy="48" />
   </worldbody>
   <actuator>

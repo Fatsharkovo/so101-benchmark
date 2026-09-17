@@ -135,8 +135,8 @@ uv run python -m lerobot.async_inference.policy_server \
 超过上限明确报错。更大的随机化范围需重新检查任务可达性和物理基线成功率。
 相机可以通过 `sim.cameras.front/overview` 的 `position/target/fovy` 调整，
 `sim.cameras.wrist` 支持 `pos/euler/fovy`（局部米/弧度，fovy 为度）。
-front 默认位置为 `[0.30, 0, 0.35]` 米（基座前方为 +X），
-向下朝机械臂方向俯视 60°，垂直视场角为 60°；光轴与桌面相交于约 `[0.0979, 0, 0]`。
+front 默认位置为 `[0.45, 0, 0.35]` 米（基座前方为 +X），
+向下朝机械臂方向俯视 60°，垂直视场角为 60°；光轴与桌面相交于约 `[0.2479, 0, 0]`。
 
 每次运行输出：
 
