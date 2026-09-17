@@ -158,12 +158,12 @@ def _base_xml(spec: SceneSpec, cfg: SimConfig) -> ET.Element:
         rgba="0.65 0.65 0.65 1",
         friction="0.8 0.005 0.0001",
     )
-    for name, pos in (("front", (0.30, 0, 0.35)), ("overview", (0.60, -0.65, 0.65))):
+    for name, pos in (("front", (0.45, 0, 0.35)), ("overview", (0.60, -0.65, 0.65))):
         camera_cfg = cfg.cameras.get(name, {})
         position = camera_cfg.get("position", pos)
         # Front optical axis points down 60 degrees from the horizontal.
         target = camera_cfg.get(
-            "target", (0.30 - 0.35 / math.sqrt(3), 0, 0) if name == "front" else (0.16, 0, 0.06)
+            "target", (0.45 - 0.35 / math.sqrt(3), 0, 0) if name == "front" else (0.16, 0, 0.06)
         )
         ET.SubElement(
             world,
