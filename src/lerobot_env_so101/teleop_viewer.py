@@ -16,6 +16,11 @@ class SeparateViews(ThreeViewWindow):
         self.reset_requested = False
         self.start_requested = False
         self.bound_model = env.model
+        self.show_front_camera = env.cfg.cameras.get("front", {}).get("show_pose", True)
+        if self.show_front_camera:
+            # Include both the base and the elevated external camera on first opening.
+            self.camera.lookat[:] = (env.data.cam("front").xpos + env.data.body("base").xpos) / 2
+            self.camera.distance = max(1.05, np.linalg.norm(env.data.cam("front").xpos) * 1.8)
         self.extra = []
         glfw.set_window_title(self.window, "SO-101 Overview | Space: start recording | R: reset | Esc: stop")
         glfw.set_window_size(self.window, 800, 660)
@@ -58,6 +63,8 @@ class SeparateViews(ThreeViewWindow):
                 mj.mjtCatBit.mjCAT_ALL,
                 self.scene,
             )
+            if self.show_front_camera:
+                self.add_front_camera_guide()
             mj.mjr_render(rect, self.scene, self.context)
             label = mode
             mj.mjr_overlay(
@@ -84,6 +91,44 @@ class SeparateViews(ThreeViewWindow):
         return not any(
             glfw.window_should_close(window) for window in [self.window, *(item[1] for item in self.extra)]
         )
+
+    def add_front_camera_guide(self) -> None:
+        """Draw a schematic camera, optical axis and frustum only in the overview scene."""
+        camera = self.env.data.cam("front")
+        origin = camera.xpos.copy()
+        rotation = camera.xmat.reshape(3, 3)
+        blue = np.array([0.1, 0.75, 1.0, 1.0], dtype=np.float32)
+        yellow = np.array([1.0, 0.6, 0.05, 1.0], dtype=np.float32)
+
+        def geom(kind, size, position, matrix, color):
+            item = self.scene.geoms[self.scene.ngeom]
+            mj.mjv_initGeom(item, kind, np.asarray(size, dtype=float), position, matrix.ravel(), color)
+            self.scene.ngeom += 1
+            return item
+
+        def line(start, end, color, arrow=False):
+            kind = mj.mjtGeom.mjGEOM_ARROW if arrow else mj.mjtGeom.mjGEOM_LINE
+            item = geom(kind, [0, 0, 0], origin, np.eye(3), color)
+            mj.mjv_connector(item, kind, 0.003 if arrow else 2.0, start, end)
+
+        if self.scene.ngeom + 11 > self.scene.maxgeom:
+            return
+        body = geom(
+            mj.mjtGeom.mjGEOM_BOX, [0.025, 0.018, 0.012], origin + rotation[:, 2] * 0.014, rotation, blue
+        )
+        body.label = "front"
+        geom(mj.mjtGeom.mjGEOM_SPHERE, [0.006, 0, 0], origin, np.eye(3), yellow)
+        line(origin, origin - rotation[:, 2] * 0.22, yellow, arrow=True)
+        depth = 0.14
+        half_height = depth * np.tan(np.deg2rad(self.env.model.cam("front").fovy[0]) / 2)
+        half_width = half_height * self.env.cfg.width / self.env.cfg.height
+        corners = [
+            origin + rotation @ np.array([x * half_width, y * half_height, -depth])
+            for x, y in ((-1, -1), (1, -1), (1, 1), (-1, 1))
+        ]
+        for index, corner in enumerate(corners):
+            line(origin, corner, blue)
+            line(corner, corners[(index + 1) % 4], blue)
 
     def bind_model(self) -> None:
         """Replace model-dependent resources while retaining all native windows and the orbit camera."""

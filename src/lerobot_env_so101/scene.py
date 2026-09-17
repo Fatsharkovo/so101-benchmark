@@ -91,6 +91,15 @@ def add_plate(world: ET.Element, asset: ET.Element, spec: SceneSpec, plate_xy: n
 def _base_xml(spec: SceneSpec, cfg: SimConfig) -> ET.Element:
     root = ET.parse(ASSET_DIR / "so101.xml").getroot()
     root.find("compiler").set("meshdir", str(ASSET_DIR / "assets"))
+    # Servo 2 housing/mount belongs to shoulder; upper_arm is its driven link.
+    # Priority + condim=1 prevents the opposing geom from restoring contact friction.
+    shoulder = root.find(".//body[@name='shoulder']")
+    for geom, name in zip(
+        shoulder.findall("geom[@class='collision']"),
+        ("second_servo_housing", "second_servo_mount"),
+        strict=True,
+    ):
+        geom.attrib.update(name=name, friction="0 0 0", condim="1", priority="2")
     root.find("option").set("timestep", str(1 / cfg.physics_hz))
     root.find("option").set("iterations", "50")
     ET.SubElement(root.find("option"), "flag", multiccd="enable")
