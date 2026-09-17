@@ -18,9 +18,55 @@ def test_wrist_zero_rotates_the_whole_gripper_forward():
         env.mj.mj_forward(env.model, env.data)
         offset = env.data.cam("wrist").xpos - env.data.body("gripper").xpos
         assert offset[0] > 0.05
-        assert abs(offset[1]) < 0.005
+        # The Seeed mount is slightly asymmetric; the camera remains in front, not beside the arm.
+        assert offset[0] > 5 * abs(offset[1])
         action[4] = 30
         assert env.to_sim(action)[4] - q[4] == pytest.approx(np.pi / 6)
+    finally:
+        env.close()
+
+
+def test_seeed_mount_shared_by_xml_and_python_with_clear_optical_aperture():
+    import mujoco
+
+    from lerobot_env_so101.scene import make_xml
+
+    env = SO101Env(cfg=SimConfig(images=False))
+    try:
+        env.reset(seed=0)
+        fallback_xml, _ = make_xml(env.task_impl.scene(), env.cfg, 0)
+        fallback = mujoco.MjModel.from_xml_string(fallback_xml)
+        for model in (env.model, fallback):
+            camera = model.cam("wrist")
+            np.testing.assert_allclose(camera.pos, [0.0025, 0.07145211723, -0.003222625645], atol=1e-8)
+            assert camera.fovy[0] == 65
+            assert (
+                model.geom("wrist_camera_mount_visual").dataid[0] == model.mesh("seeed_wrist_camera_mount").id
+            )
+            assert model.geom("second_servo_housing").condim[0] == 1
+            np.testing.assert_array_equal(model.geom("second_servo_housing").friction, [0, 0, 0])
+            # Both directions through the lens must miss all support/frame collision boxes.
+            data = mujoco.MjData(model)
+            mujoco.mj_forward(model, data)
+            axis = -data.cam("wrist").xmat.reshape(3, 3)[:, 2]
+            aperture = data.cam("wrist").xpos
+            for geom_id in range(model.ngeom):
+                if (
+                    not model.geom(geom_id).name.startswith("wrist_camera_")
+                    or model.geom_type[geom_id] != mujoco.mjtGeom.mjGEOM_BOX
+                ):
+                    continue
+                for direction in (axis, -axis):
+                    distance = mujoco.mju_rayGeom(
+                        data.geom_xpos[geom_id],
+                        data.geom_xmat[geom_id],
+                        model.geom_size[geom_id],
+                        aperture,
+                        direction,
+                        mujoco.mjtGeom.mjGEOM_BOX,
+                    )
+                    assert distance < 0, model.geom(geom_id).name
+        np.testing.assert_allclose(fallback.cam("wrist").quat, env.model.cam("wrist").quat)
     finally:
         env.close()
 

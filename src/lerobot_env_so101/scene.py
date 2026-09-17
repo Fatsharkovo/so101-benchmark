@@ -89,8 +89,18 @@ def add_plate(world: ET.Element, asset: ET.Element, spec: SceneSpec, plate_xy: n
 
 
 def _base_xml(spec: SceneSpec, cfg: SimConfig) -> ET.Element:
+    import task_scenes
+
     root = ET.parse(ASSET_DIR / "so101.xml").getroot()
     root.find("compiler").set("meshdir", str(ASSET_DIR / "assets"))
+    # Share the editable wrist attachment with XML scenes; retain upstream robot assets.
+    mount_parent = root.find(".//body[@name='camera_mount']/..")
+    mount_parent.remove(mount_parent.find("body[@name='camera_mount']"))
+    attachment = ET.parse(Path(task_scenes.__file__).parent / "wrist_camera.xml").getroot()
+    mount_parent.append(attachment.find("body"))
+    root.find("asset/mesh[@file='wrist_roll_follower_so101_camera_mount.stl']").set(
+        "file", "seeed_wrist_camera_mount.stl"
+    )
     # Servo 2 housing/mount belongs to shoulder; upper_arm is its driven link.
     # Priority + condim=1 prevents the opposing geom from restoring contact friction.
     shoulder = root.find(".//body[@name='shoulder']")
@@ -182,14 +192,10 @@ def _base_xml(spec: SceneSpec, cfg: SimConfig) -> ET.Element:
             xyaxes=look_at(position, target),
             fovy=str(camera_cfg.get("fovy", 45 if name == "front" else 48)),
         )
-    wrist = root.find(".//camera[@name='wrist_cam']")
-    wrist.set("name", "wrist")
+    wrist = root.find(".//camera[@name='wrist']")
     for attr in ("resolution", "sensorsize", "focal"):
         wrist.attrib.pop(attr, None)
     wrist.set("fovy", str(cfg.cameras.get("wrist", {}).get("fovy", 65)))
-    for attr in ("pos", "euler"):
-        if attr in cfg.cameras.get("wrist", {}):
-            wrist.set(attr, numbers(cfg.cameras["wrist"][attr]))
     return root
 
 
