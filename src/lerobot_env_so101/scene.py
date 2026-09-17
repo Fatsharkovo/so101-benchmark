@@ -93,6 +93,10 @@ def _base_xml(spec: SceneSpec, cfg: SimConfig) -> ET.Element:
 
     root = ET.parse(ASSET_DIR / "so101.xml").getroot()
     root.find("compiler").set("meshdir", str(ASSET_DIR / "assets"))
+    root.find("compiler").set("texturedir", str(ASSET_DIR / "assets"))
+    for material in root.findall("asset/material"):
+        if not material.get("name", "").startswith("sts3215_"):
+            material.attrib.update(rgba="0.82 0.82 0.82 1", specular="0.1", shininess="0.1")
     # Share the editable wrist attachment with XML scenes; retain upstream robot assets.
     mount_parent = root.find(".//body[@name='camera_mount']/..")
     mount_parent.remove(mount_parent.find("body[@name='camera_mount']"))
@@ -119,6 +123,19 @@ def _base_xml(spec: SceneSpec, cfg: SimConfig) -> ET.Element:
     ET.SubElement(visual, "global", offwidth=str(cfg.width), offheight=str(cfg.height))
     ET.SubElement(visual, "headlight", ambient="0.35 0.35 0.35", diffuse="0.6 0.6 0.6")
     asset = root.find("asset")
+    ET.SubElement(asset, "texture", name="table_wood", type="2d", file="Wood049_1K_Color.png")
+    ET.SubElement(
+        asset,
+        "material",
+        name="table_wood_material",
+        texture="table_wood",
+        texrepeat="1 1",
+        texuniform="false",
+        rgba="1 1 1 1",
+        specular="0.1",
+        shininess="0.1",
+        reflectance="0",
+    )
     ET.SubElement(
         asset,
         "texture",
@@ -174,7 +191,8 @@ def _base_xml(spec: SceneSpec, cfg: SimConfig) -> ET.Element:
         name="table_top",
         type="box",
         size="0.42 0.38 0.025",
-        rgba="0.65 0.65 0.65 1",
+        material="table_wood_material",
+        rgba="1 1 1 1",
         friction="0.8 0.005 0.0001",
     )
     for name, pos in (("front", (0.45, 0, 0.35)), ("overview", (0.60, -0.65, 0.65))):

@@ -1,0 +1,13 @@
+{
+  "asset": "Wood049",
+  "author": "ambientCG",
+  "source": "https://ambientcg.com/a/Wood049",
+  "download": "https://ambientcg.com/get?file=Wood049_1K-PNG.zip",
+  "license": "CC0-1.0",
+  "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "provider_license": "https://docs.ambientcg.com/license/",
+  "file": "assets/Wood049_1K_Color.png",
+  "sha256": "2590dd053fb000d395259d645ec62ee08706fe991202390c3e43791295e3ea3c",
+  "modifications": "None; original 1024x1024 color map extracted from 1K-PNG archive.",
+  "usage": "MuJoCo table color texture; no displacement or physics changes."
+}
