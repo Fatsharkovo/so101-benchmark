@@ -239,7 +239,7 @@ def main() -> None:
     parser.add_argument("--leader-id", required=True)
     parser.add_argument("--leader-python", default=sys.executable)
     parser.add_argument(
-        "--config", type=Path, default=Path(__file__).resolve().parents[1] / "configs/fixed.yaml"
+        "--config", type=Path, default=Path(__file__).resolve().parents[1] / "configs/teleop.yaml"
     )
     parser.add_argument("--task")
     parser.add_argument("--control-hz", type=int, default=30, help=argparse.SUPPRESS)

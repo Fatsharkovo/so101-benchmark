@@ -21,6 +21,7 @@ COLORS = {
 class SimConfig:
     control_hz: int = 30
     physics_hz: int = 600
+    interpolate_actions: bool = False
     episode_seconds: float = 60.0
     width: int = 640
     height: int = 480
@@ -42,6 +43,8 @@ class SimConfig:
     )
 
     def __post_init__(self) -> None:
+        if not isinstance(self.interpolate_actions, bool):
+            raise ValueError("interpolate_actions must be a boolean")
         if self.control_hz <= 0 or self.physics_hz % self.control_hz or self.physics_hz < self.control_hz:
             raise ValueError("physics_hz must be a positive integer multiple of control_hz")
         if (

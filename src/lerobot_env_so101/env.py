@@ -137,8 +137,17 @@ class SO101Env(gym.Env):
             raise RuntimeError("Call reset before stepping a new episode")
         q = self.to_sim(action)
         self.applied_action = self.from_sim(q)
-        self.data.ctrl[self.actuator_ids] = q
-        for _ in range(self.cfg.physics_hz // self.cfg.control_hz):
+        substeps = self.cfg.physics_hz // self.cfg.control_hz
+        previous_target = self.data.ctrl[self.actuator_ids].copy()
+        for index in range(substeps):
+            # Ramp between commanded targets, not measured positions (which may be contact-blocked).
+            # End exactly at q; the next call and restore_initial use ctrl as their starting point.
+            if self.cfg.interpolate_actions and index < substeps - 1:
+                self.data.ctrl[self.actuator_ids] = previous_target + (q - previous_target) * (
+                    (index + 1) / substeps
+                )
+            else:
+                self.data.ctrl[self.actuator_ids] = q
             self.mj.mj_step(self.model, self.data)
         if not np.isfinite(self.data.qpos).all() or not np.isfinite(self.data.qvel).all():
             raise RuntimeError("Non-finite simulation state")

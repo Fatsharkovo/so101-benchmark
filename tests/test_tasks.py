@@ -108,10 +108,12 @@ def test_stack_requires_support_and_stability():
 
 
 @pytest.mark.parametrize("task", list(discover()))
-def test_scripted_contact_baseline_fixed_scene(task):
+@pytest.mark.parametrize("interpolate", [False, True])
+def test_scripted_contact_baseline_fixed_scene(task, interpolate):
     env = SO101Env(
         task,
         SimConfig(
+            interpolate_actions=interpolate,
             images=False,
             width=32,
             height=32,
