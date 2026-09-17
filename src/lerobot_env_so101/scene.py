@@ -200,9 +200,11 @@ def make_xml(
     scene_path: Path | None = None,
     params: dict | None = None,
 ) -> tuple[str, dict]:
+    from .camera_profile import apply_camera_overrides
     from .xml_scene import load_scene
 
     root = load_scene(scene_path, spec, params or {}, cfg) if scene_path else _base_xml(spec, cfg)
+    apply_camera_overrides(root, cfg)
     world, asset = root.find("worldbody"), root.find("asset")
     sampled = {"seed": seed, "objects": {}, "groups": {}}
     streams = {
@@ -312,7 +314,9 @@ def make_xml(
     camera_group = cfg.randomization.get("camera", {})
     if camera_group.get("enabled", False):
         for camera in root.iter("camera"):
-            if camera.get("name") == "overview":
+            if camera.get("name") == "overview" or cfg.cameras.get(camera.get("name"), {}).get(
+                "fixed", False
+            ):
                 continue
             jitter = camera_group.get("position_jitter", 0.005)
             p = np.fromstring(camera.get("pos"), sep=" ") + streams["camera"].uniform(-jitter, jitter, 3)

@@ -134,7 +134,7 @@ def derive_spec(root: ET.Element, spec: SceneSpec) -> None:
 
 
 def load_scene(path: Path, spec: SceneSpec, params: dict, cfg: SimConfig) -> ET.Element:
-    from .scene import add_plate, look_at, numbers
+    from .scene import add_plate, numbers
 
     root = read_xml(path)
     derive_spec(root, spec)
@@ -176,19 +176,4 @@ def load_scene(path: Path, spec: SceneSpec, params: dict, cfg: SimConfig) -> ET.
     visual = root.find("visual/global")
     visual.set("offwidth", str(cfg.width))
     visual.set("offheight", str(cfg.height))
-    for name, values in cfg.cameras.items():
-        camera = root.find(f".//camera[@name='{name}']")
-        if camera is None:
-            raise ValueError(f"Unknown scene camera {name}")
-        if "position" in values or "pos" in values:
-            camera.set("pos", numbers(values.get("position", values.get("pos"))))
-        if "target" in values or "euler" in values:
-            for key in ("quat", "euler", "xyaxes", "axisangle", "zaxis"):
-                camera.attrib.pop(key, None)
-            if "target" in values:
-                camera.set("xyaxes", look_at(np.fromstring(camera.get("pos"), sep=" "), values["target"]))
-            else:
-                camera.set("euler", numbers(values["euler"]))
-        if "fovy" in values:
-            camera.set("fovy", str(values["fovy"]))
     return root
