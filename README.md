@@ -243,6 +243,27 @@ uv run lerobot-eval --env.type=so101_bench --env.task=stack_blue_on_red \
 `SO101SimRobot` 提供 `connect/get_observation/send_action/reset_episode/disconnect`
 和 LeRobot 标准特征描述，可用于外部采集循环。每次 `send_action` 推进一个控制周期。
 
+### 矽递版本腕部相机支架
+
+腕部使用矽递官方教程链接的 `SO-ARM101_CAMERA_MOUNT`，来源为
+[soarm_soft_gripper](https://github.com/xiehuangbao888/soarm_soft_gripper) 的 STEP 装配。
+仅提取相机支架，保留原机械臂及硬夹爪。三段连接壁和四条框边采用独立碰撞盒，
+避免用整个支架的凸包封住相机开口；第二舵机外壳/安装座仍为零接触摩擦。
+
+`task_scenes/wrist_camera.xml` 集中定义支架、碰撞体和 wrist 相机，XML 场景及 Python
+生成场景共用。新 STL 已转换到夹爪局部坐标系、单位为米；安装面位于夹爪 +Y 侧，
+安装孔中心距约 8.1 mm。原 wrist_roll 零位映射不变，front 本机配置不受影响。
+
+wrist 光轴沿支架安装面法线，局部绕 X 轴约 -25°，fovy 保持 65°。镜头位置暂按
+安装面外 1.6 mm 电路板厚度加 5 mm 镜头伸出量估算，**不是实测光心标定**；支架
+质量沿用 12 g，也不是实测值。相机 `pos`/`quat` 可在该 XML 中继续按实物调整。
+旧数据的 `scene.xml` 仍引用保留的原支架资产，因此不因新默认支架而改变历史回放。
+
+来源版本、转换矩阵和 SHA256 见包内 `assets/so101/seeed_camera_mount_manifest.json`。
+该外部 STEP 仓库未提供明确的许可证文件，单独记录来源，不将其标记为 Menagerie 的
+Apache-2.0 资产。`tools/convert_seeed_camera_mount.py` 可从固定版本 STEP 重建 STL，
+Gmsh 仅是转换工具依赖，运行仿真不需要安装。
+
 ### Front 相机实时调参
 
 无需连接 Leader 或真实相机即可打开独立调参窗口：
@@ -344,6 +365,7 @@ uvx pre-commit run --all-files
 详细结果见 [VALIDATION.md](VALIDATION.md)。π0 和 SmolVLA 适配已提供，尚未取得匹配
 检查点进行真实权重验证。新增/修改任务后，先检查成功判定与脚本基线，再运行模型评测。
 
-资产来源、固定版本和 SHA256 记录位于 `assets/so101/manifest.json`（包内）；模型为
-Apache-2.0，原始许可证保留在资产目录。场景构建时增加桌面、任务物体、相机，使用
+Menagerie 原始资产来源、固定版本和 SHA256 位于 `assets/so101/manifest.json`（包内），
+使用 Apache-2.0，原始许可证保留在资产目录。新增矽递教程支架单独记录来源，见上文。
+场景构建时增加桌面、任务物体、相机，使用
 600 Hz 物理步长与 multiccd 碰撞求解；原始机器人文件保持原样。
