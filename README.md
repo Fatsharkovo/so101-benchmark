@@ -1,99 +1,369 @@
 # SO-101 仿真 Benchmark
 
-独立开发的 MuJoCo / Gymnasium 环境，通过 `lerobot_env_so101` 插件接入同级 LeRobot。
-提供五色指令入盘和蓝块叠红块，共六项任务；支持 π0、π0.5、SmolVLA 的本地和远程推理。
+基于 MuJoCo 和 Gymnasium 的 SO-ARM101 仿真项目，提供六项桌面操作任务。可以连接真实
+SO-101 Leader 控制仿真机械臂、采集 LeRobot 数据集，也可以运行脚本基线和学习策略评测。
 
-![实际三视角窗口](docs/three_views.png)
+本项目包含：
 
-## 安装与快速运行
+- 六个可编辑的 XML 场景：五色方块入盘、蓝块叠放到红块上。
+- Leader → 仿真遥操作，overview、front、wrist 三窗口同时显示。
+- 按空格开始采集，成功后保存 episode，并在原窗口中重置。
+- 独立 front 相机调参窗口，支持滑条、即时预览和本机参数保存。
+- LeRobot v3.0 本地数据集写入，以及 π0、π0.5、SmolVLA 本地/远程推理接口。
 
-以下命令均在 `so101_benchmark/` 中执行，需要 Python 3.12+。项目固定 MuJoCo 3.3.7，
-SO-101 资产已经随包提供，模型权重通过路径引用。
+![三视角界面示例](docs/three_views.png)
+
+> 图片为界面示例，支架与相机参数以当前 XML 和本机配置为准。
+
+## 目录
+
+- [1. 环境安装](#1-环境安装)
+- [2. 快速运行](#2-快速运行)
+- [3. 相机调参](#3-相机调参)
+- [4. 遥操作与数据采集](#4-遥操作与数据采集)
+- [5. 任务与成功判定](#5-任务与成功判定)
+- [6. 策略评测与回放](#6-策略评测与回放)
+- [7. 配置与 XML 场景](#7-配置与-xml-场景)
+- [8. 模型来源与实物对齐](#8-模型来源与实物对齐)
+- [9. 开发与验证](#9-开发与验证)
+- [10. 常见问题](#10-常见问题)
+
+## 1. 环境安装
+
+### 1.1 运行要求
+
+建议使用 Linux；当前验证平台为 Linux、Python 3.12、MuJoCo 3.3.7。项目声明支持 Python
+3.12+，推荐先使用 3.12。机器人网格和 XML 已随仓库提供，无需额外下载模型资产。
+
+| 用途 | 需要的环境 |
+| --- | --- |
+| 场景预览、相机调参、脚本基线 | 本项目 Python 环境；不需要真实机械臂、相机或模型权重 |
+| GUI 窗口 | 可用的桌面显示和 OpenGL；相机调参还需要 Tk |
+| 遥操作采集 | 已连接、已校准的 SO-101 Leader，以及带 LeRobot/Feetech 的 Python 环境 |
+| 学习策略评测 | LeRobot、对应策略依赖和匹配的检查点；模型通常需要 GPU |
+
+Ubuntu/Debian 可安装以下系统组件：
 
 ```bash
-# 仿真、视频输出和测试；不安装策略模型依赖
+sudo apt update
+sudo apt install -y git libgl1 libglfw3 libosmesa6 ffmpeg python3-tk
+```
+
+`python3-tk` 对应系统 Python；使用 uv 管理的 Python 时，仍需检查该解释器是否带有 Tk。
+安装 uv 可参考 [官方安装说明](https://docs.astral.sh/uv/getting-started/installation/)。
+
+### 1.2 首次安装：独立仿真环境
+
+```bash
+git clone https://github.com/Fatsharkovo/so101-benchmark.git
+cd so101-benchmark
+
+uv python install 3.12
+uv venv --python 3.12
+uv pip install --python .venv/bin/python --no-sources -e '.[test]'
+```
+
+这条安装路径不需要同级 `lerobot/` 仓库，也不安装 PyTorch 或策略模型依赖。
+`--no-sources` 忽略开发配置中的 `../lerobot` 来源；`uv pip install` 按项目依赖范围解析，
+**不使用 `uv.lock` 锁定全部版本**。MuJoCo 固定为 3.3.7。
+
+后续命令均在 **`so101-benchmark/` 根目录**执行，统一使用 `uv run --no-sync`，避免运行时
+重新解析同级 LeRobot 依赖。`env -u PYTHONPATH` 用于避免 ROS 等外部 Python 路径干扰。
+
+```bash
+env -u PYTHONPATH uv run --no-sync so101-bench --help
+env -u PYTHONPATH uv run --no-sync so101-bench list
+env -u PYTHONPATH uv run --no-sync python -c 'import tkinter; print("Tk", tkinter.TkVersion)'
+```
+
+已有可用的 `.venv` 时可跳过环境创建，直接运行上述检查。
+
+### 1.3 可选：LeRobot 与模型依赖
+
+**只做遥操作采集时**，仿真环境可保持轻量，Leader 读取和数据写入使用另外一个已有的
+LeRobot 环境，具体见[遥操作准备](#41-准备-leader-环境)。
+
+**需要本地模型或远程客户端时**，可在本项目环境中增加依赖：
+
+```bash
+uv pip install --python .venv/bin/python --no-sources -e '.[policies,remote,test]'
+```
+
+这会安装较大的 PyTorch/LeRobot 依赖。根据实际 GPU 配置 CUDA/PyTorch，并确保客户端、
+服务器和检查点使用兼容的 LeRobot 版本。本项目不附带模型权重，也不负责训练模型。
+
+如果要使用同级 LeRobot 源码进行开发，目录应为：
+
+```text
+workspace/
+├── lerobot/
+└── so101-benchmark/
+```
+
+在 `so101-benchmark/` 下可使用仓库原有的锁定安装路径：
+
+```bash
 uv sync --locked --extra test
-
-# 需要接入 LeRobot 和模型时
-uv sync --locked --extra policies --extra remote --extra test
-
-uv run so101-bench list
-uv run so101-bench preview --config configs/fixed.yaml
-uv run so101-bench preview --config configs/fixed.yaml --display
-uv run so101-bench eval --config configs/benchmark.yaml
+# 含策略与远程推理依赖：
+# uv sync --locked --extra policies --extra remote --extra test
 ```
 
-本次开发已准备 `.venv`，它复用了现有 `soarm101` 环境的 PyTorch/LeRobot，
-新增依赖只安装在本项目虚拟环境。可以直接使用：
+该路径依赖 `../lerobot` 的版本和元数据与锁文件匹配。已知本地 LeRobot checkout 的
+元数据差异可能导致 `--locked` 报错，详见 [VALIDATION.md](VALIDATION.md)。仅需独立仿真
+时使用 1.2 节即可；不要为修复安装而覆盖已有硬件校准或数据。
+
+## 2. 快速运行
+
+### 查看场景
 
 ```bash
-uv run --no-sync so101-bench preview --display
-uv run --no-sync so101-bench eval --config configs/smoke.yaml
+# 查看全部任务
+env -u PYTHONPATH uv run --no-sync so101-bench list
+
+# 打开仿真预览：同一窗口内显示三个视角，不连接硬件
+env -u PYTHONPATH uv run --no-sync so101-bench preview \
+  --config configs/fixed.yaml --task stack_blue_on_red --display
 ```
 
-`smoke.yaml` 关闭相机渲染与视频，用于快速运行物理脚本基线；它不适用于视觉模型。
-基线读取物体真实位置，通过 IK 和夹爪接触操作方块，成绩用于验证环境可完成性。
+鼠标左键旋转 overview 视角、右键平移、滚轮缩放，Esc 退出。实体 Leader 遥操作使用
+后文的 `tools/teleoperate.py`，它会打开三个独立窗口。
 
-无窗口默认使用 OSMesa 软件渲染，需要系统提供 `libOSMesa.so`。Ubuntu 可安装
-`libosmesa6`。有 NVIDIA GPU 时，将 `sim.render_backend` 设为 `egl`。
-`--display` 自动选择 GLFW，需要可用的桌面显示服务；采集端不需要加载模型权重。
+### 运行脚本基线
 
-## 任务与成功规则
+```bash
+# 六项任务各跑一个 episode，不渲染图像、不保存视频
+env -u PYTHONPATH uv run --no-sync so101-bench eval --config configs/smoke.yaml
+```
 
-| ID | 指令目标 | 场景 |
+脚本基线使用物体真实位置、IK 和物理接触验证任务可完成性，其成绩不是学习策略成绩。
+`smoke.yaml` 关闭图像，不能用于视觉模型或直接加 `--display`；需要画面时使用
+`configs/fixed.yaml` 或 `configs/benchmark.yaml`。
+
+### 无窗口渲染
+
+默认后端为 `osmesa`，需要 `libOSMesa.so`。有兼容 GPU/驱动时，可在自己的 YAML 中设置 EGL：
+
+```bash
+cat > /tmp/so101-preview-egl.yaml <<'YAML'
+tasks: [stack_blue_on_red]
+sim:
+  render_backend: egl
+  randomization:
+    layout: {enabled: false}
+YAML
+
+env -u PYTHONPATH uv run --no-sync so101-bench preview \
+  --config /tmp/so101-preview-egl.yaml --output outputs/preview_egl
+```
+
+图片输出到 `outputs/preview_egl/preview/`，包含 `front.png`、`wrist.png`、`overview.png`。
+`--display` 和 `camera-tune` 使用 GLFW，需要桌面显示。**CLI 会根据 YAML 设置
+`MUJOCO_GL`，只在命令前设置该环境变量不能覆盖 CLI 的配置。**
+
+## 3. 相机调参
+
+```bash
+env -u PYTHONPATH uv run --no-sync so101-bench camera-tune \
+  --config configs/fixed.yaml --task stack_blue_on_red
+```
+
+窗口左侧是仿真 front 画面，右侧为滑条和数值输入。无需连接 Leader 或真实相机，
+预览夹爪默认闭合，修改参数不会推进物理时间。
+
+| 参数 | 单位与含义 | 场景默认值 |
 | --- | --- | --- |
-| `place_red_in_plate` | 红块入盘 | 红、蓝、绿、黄、橙五块和一个盘子 |
-| `place_blue_in_plate` | 蓝块入盘 | 同上 |
-| `place_green_in_plate` | 绿块入盘 | 同上 |
-| `place_yellow_in_plate` | 黄块入盘 | 同上 |
-| `place_orange_in_plate` | 橙块入盘 | 同上 |
-| `stack_blue_on_red` | 蓝块放在红块上 | 红蓝两块 |
+| 前后距离 X | cm，基座前方为 +X | 45 |
+| 左右平移 Y | cm，基座左侧为 +Y | 0 |
+| 高度 Z | cm，相对基座所在平面 | 35 |
+| 下俯角 | 度，向下为正 | 60 |
+| 左右转向 | 度，0° 朝向 −X | 0 |
+| 画面旋转 | 度，绕镜头光轴旋转 | 0 |
+| fovy | 度，垂直视场角；与下俯角不同 | 45 |
 
-五色任务在相同 seed 下具有相同布局，各自绑定目标 ID 和英文指令，逐项计分。
-目标需要有机械臂接触和离桌抬升记录。入盘要求整个目标在盘沿内并得到盘面支撑；
-其他方块不能占据盘内区域。允许碰动其他方块、误放后取出纠正。
+滑条和微调按钮步长为 0.1，也可直接输入数值。
 
-叠放要求蓝块在红块上获得支撑，红块仍在桌上，两块直立。默认中心横向偏差小于
-较小方块边长的 30%，高度误差小于 4 mm。成功时机械臂必须脱离所有方块，目标
-（叠放时两块）连续稳定 1 秒；线速度阈值 0.01 m/s，角速度阈值 0.1 rad/s。
-抬升、支撑、稳定计时均由物理状态判定；未释放、掠过盘面和短暂接触不能成功。
-方块跌落桌下为终止失败，时间耗尽为截断失败。默认不要求机械臂复位。
+- **保存并设为本机默认**：覆盖保存到同一份个人 YAML，下次打开继续编辑。
+- **恢复上次保存**：重新读取磁盘文件。
+- **恢复场景默认**：恢复任务 XML 的默认值，需再点击保存才会更新本机默认。
+- 关闭未保存的窗口时，可以选择保存、放弃或取消；非法输入不能保存。
 
-默认方块边长 25 mm、质量 10 g，盘子为外边长 100 mm 的圆角正方形，圆角半径
-暂取 12 mm，颜色为浅蓝；盘底及盘沿厚度均为 2 mm，盘沿高出底面 6 mm，
-总高度 8 mm；控制频率 30 Hz，物理频率
-600 Hz，每回合最多 60 秒。所有评测使用固定的 MuJoCo 资产版本和采样参数记录。
+配置文件为 `$XDG_CONFIG_HOME/so101-benchmark/front_camera.yaml`；未设置 XDG 时为：
 
-六项任务共用浅蓝渐变天空、明亮照明与无限延展的视觉地面。桌面仍为操作区域，
-外围地面不参与碰撞，方块跌落失败规则保持不变。五色方块默认位于距底座约
-15–24 cm 的紧凑区域；叠放两块位于前方 19 cm、左右各 4.5 cm，中心间距 9 cm。
-默认位置扰动为每轴 ±5 mm，朝向扰动为 ±5°；关闭布局随机化时使用固定位置。
-入盘和叠放任务均可通过任务 YAML 的 `params.positions` 覆盖各颜色的 `[x, y]`。
-布局与视觉更新后，旧评测分数和录像不应直接作为当前版本的结果。
-
-## 配置、推理和结果
-
-配置参考 `configs/benchmark.yaml`。CLI 支持覆盖任务、回合数、seed、模式、输出、显示和视频：
-
-```bash
-uv run so101-bench eval --config configs/benchmark.yaml \
-  --task place_blue_in_plate,stack_blue_on_red --episodes 10 --seed 0 --no-display
-
-uv run so101-bench eval --config configs/pi05_local.yaml --mode sync
-uv run so101-bench eval --config configs/pi05_remote.yaml --mode realtime
+```text
+~/.config/so101-benchmark/front_camera.yaml
 ```
 
-`policy.backend` 为 `scripted/local/remote`；模型类型为 `pi0/pi05/smolvla`。
-`pi0_local.yaml`、`smolvla_local.yaml` 等待填入你自己的 SO-101 检查点。
-模型应携带已保存的 processor 与归一化统计，采用六维 SO-101 绝对关节控制。
-状态/动作顺序为 `shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll, gripper`；
-前五维为角度，夹爪为 `0–100`。内部统一转换成 MuJoCo 弧度，并取关节限位。
-`sim.joint_signs` 和 `sim.joint_offsets_deg` 控制实机零位映射，转换为
-`q_sim = radians((角度 - offset) * sign)`。当前 offsets 默认为 `[0, 0, 0, 0, 90]`：
-Leader 的 wrist_roll 零度映射到仿真 -90°，整个夹爪及相机支架随关节朝向正前方，
-没有平移相机支架几何。反向状态转换使用同一偏移；旧模型的标定需与该设置一致。
+个人参数不会改写共享 XML。遥操作启动时自动加载，并固定到当前会话；**保存新参数后，
+需要重新启动遥操作才能生效**。任务重置保持相机参数，个人 front 参数不参与相机随机化。
+普通 `preview`、`eval` 和历史 `replay` 不自动读取该文件；评测时需在运行 YAML 中显式配置相机。
 
-两路图像是 RGB uint8，默认 640×480。名称不同的检查点可配置：
+调参工具目前只调整 front。wrist 的支架和相机参数位于
+[`task_scenes/wrist_camera.xml`](task_scenes/wrist_camera.xml)，默认 fovy 为 65°。
+
+## 4. 遥操作与数据采集
+
+### 4.1 准备 Leader 环境
+
+使用已有的 **SO-101 Leader 校准文件**和稳定串口路径。无需实体 Follower，也不读取真实
+摄像头；front/wrist 视频来自仿真。程序读取 Leader 关节，动作施加到仿真机械臂。
+
+Leader Python 环境需要 LeRobot、Feetech 驱动和可用的视频编码依赖。已验证的写入环境为
+LeRobot 0.6.0，数据集格式为 v3.0。尚无环境时，可先单独创建：
+
+```bash
+uv venv --python 3.12 ../so101-leader-env
+uv pip install --python ../so101-leader-env/bin/python 'lerobot[feetech]==0.6.0'
+```
+
+已有正常工作的 LeRobot/Conda 环境可以直接复用，无需重复安装。安装依赖不等于完成硬件
+校准；新 Leader 应先按 [LeRobot](https://huggingface.co/docs/lerobot/so101) 的硬件流程完成校准。
+本项目不会自动重做校准，找不到文件或校准不匹配时会报错。
+
+先设置对应解释器，检查软件依赖和串口；以下检查不连接电机：
+
+```bash
+export SO101_LEADER_PYTHON="$(pwd)/../so101-leader-env/bin/python"
+# 或改为已有环境的绝对路径，例如 /path/to/conda-env/bin/python
+
+env -u PYTHONPATH "$SO101_LEADER_PYTHON" -c \
+  'from lerobot.teleoperators.so_leader import SO101Leader; from lerobot.configs import RGBEncoderConfig; from lerobot.datasets.dataset_metadata import CODEBASE_VERSION; print(CODEBASE_VERSION)'
+ls -l /dev/serial/by-id/
+```
+
+应打印 `v3.0`。默认校准位置为
+`~/.cache/huggingface/lerobot/calibration/teleoperators/so_leader/<leader-id>.json`，
+也可能由 LeRobot 的缓存/校准环境变量覆盖。ID 必须与已保存校准一致。
+
+### 4.2 启动三窗口遥操作
+
+将下面两个变量改为自己的 Leader 设备和校准 ID，再运行：
+
+```bash
+export SO101_LEADER_PORT="/dev/serial/by-id/usb-YOUR_LEADER_DEVICE"
+export SO101_LEADER_ID="YOUR_EXISTING_LEADER_ID"
+
+env -u PYTHONPATH uv run --no-sync python tools/teleoperate.py \
+  --config configs/fixed.yaml \
+  --port "$SO101_LEADER_PORT" \
+  --leader-id "$SO101_LEADER_ID" \
+  --leader-python "$SO101_LEADER_PYTHON" \
+  --task stack_blue_on_red
+```
+
+启动后显示 overview、front、wrist 三个独立窗口。等待数据写入进程就绪、Leader 读数正常后，
+主窗口进入 `WAITING`。使用其他任务时修改 `--task`；默认 `[all]` 在遥操作入口选择叠放任务。
+
+| 操作/状态 | 行为 |
+| --- | --- |
+| `WAITING` | 可试操作，不计回合时间、不采集 |
+| **Space** | 恢复完整初始场景，开始当前回合采集 |
+| 成功 | 自动保存；原窗口内重置到下一 seed，等待再次按 Space |
+| 失败、超时或 **R** | 丢弃未完成回合，恢复当前 seed；等待时 R 也可复位 |
+| **Esc** 或关闭任一窗口 | 退出并完成已保存数据的收尾，丢弃未完成回合 |
+| `Saved episodes: N` | 本次会话已确认保存的成功回合数，重置不清零 |
+| `ERROR` | 停止采集，查看终端错误和会话 `writer.log` |
+
+默认每回合限时 60 秒，等待时间不计入。可用 `--seconds 300` 限制整次会话的墙钟时间；
+评测用的 `episodes` 不限制遥操作采集数量。按键应在遥操作窗口获得焦点时使用。
+
+### 4.3 数据保存
+
+每次启动创建新的 `outputs/teleop_<时间戳>/`。可通过 `--output /path/to/new_session`
+指定目录，**目标目录必须尚不存在**。
+
+```text
+outputs/teleop_<时间戳>/
+├── config.json                 # 本次生效的配置，包含本机 front 参数
+├── provenance.json             # 软件版本与来源信息
+├── summary.json                # 退出时生成的会话统计
+├── writer.log                  # 数据写入进程日志
+├── dataset/                    # 官方 LeRobot v3.0 数据集
+│   ├── meta/
+│   ├── data/
+│   └── videos/
+└── episodes/episode_000000/
+    ├── metadata.json           # 该成功回合的配置、任务与初始状态等
+    └── scene.xml               # 实际使用的场景与相机参数
+```
+
+只保存成功回合。数据包含六维关节状态、实际应用动作、任务说明和 front/wrist 两路 H.264
+视频；每帧对应动作执行前的观察，时间戳按控制频率从 0 开始。overview 仅用于查看。
+相机位置、朝向和 fovy 记录在配置/场景快照中，不叠加到训练图像。
+
+`recording.repo_id` 默认为 `local/<任务 ID>`，只写本地，不自动上传 Hub。写入器默认使用
+`--leader-python`，也可在 YAML 中指定 `recording.writer_python`。该解释器必须支持官方
+v3.0 写入接口；写入失败或队列满会停止采集，不会静默丢帧。
+
+**遥操作输出不能直接传给 `so101-bench replay`**：它没有评测回放所需的
+`transitions.jsonl`。请用 LeRobot 数据集工具读取 `dataset/`，或直接查看其中的视频。
+
+## 5. 任务与成功判定
+
+| 任务 ID | 目标 |
+| --- | --- |
+| `place_red_in_plate` | 红块入盘 |
+| `place_blue_in_plate` | 蓝块入盘 |
+| `place_green_in_plate` | 绿块入盘 |
+| `place_yellow_in_plate` | 黄块入盘 |
+| `place_orange_in_plate` | 橙块入盘 |
+| `stack_blue_on_red` | 将蓝块叠放到红块上 |
+
+五色任务在相同 seed 下使用相同布局，仅目标颜色不同。目标必须有机械臂接触和离桌抬升
+记录；入盘要求目标整体在盘沿内、由盘面支撑，其他方块不占盘内区域。允许误放后取出纠正。
+
+叠放要求蓝块由红块支撑、红块留在桌上且两块直立；默认横向偏差小于较小方块边长的 30%，
+高度误差小于 4 mm。成功时机械臂须释放所有方块，目标连续稳定 1 秒（线速度低于
+0.01 m/s、角速度低于 0.1 rad/s）。跌落和超时判为失败，默认不要求机械臂回到初始姿态。
+
+| 场景参数 | 默认值 |
+| --- | --- |
+| 方块 | 边长 25 mm，质量 10 g |
+| 盘子 | 浅蓝色圆角正方形，外边长 100 mm，圆角半径 12 mm |
+| 盘厚度 | 底面/盘沿厚 2 mm，盘沿高出底面 6 mm，总高 8 mm |
+| 控制/物理频率 | 30 Hz / 600 Hz |
+| 单回合时间 | 60 秒（`smoke.yaml` 为 20 秒） |
+| 布局随机化 | 默认位置每轴 ±5 mm，朝向 ±5°；`fixed.yaml` 关闭 |
+
+场景使用明亮天空和无限视觉地面；外围地面不参与碰撞，实际操作区域仍是桌面。
+叠放两块位于基座前方约 19 cm，左右各 4.5 cm。
+
+## 6. 策略评测与回放
+
+### 6.1 评测入口
+
+```bash
+# 关闭布局扰动，显示脚本执行过程
+env -u PYTHONPATH uv run --no-sync so101-bench eval \
+  --config configs/fixed.yaml --task stack_blue_on_red --episodes 1 --display
+
+# 多任务评测；无窗口渲染使用 YAML 中指定的后端
+env -u PYTHONPATH uv run --no-sync so101-bench eval \
+  --config configs/benchmark.yaml \
+  --task place_blue_in_plate,stack_blue_on_red --episodes 10 --seed 0 --no-display
+```
+
+| 配置 | 用途 |
+| --- | --- |
+| `configs/fixed.yaml` | 固定布局，适合调试/遥操作 |
+| `configs/smoke.yaml` | 无图像、无视频的脚本检查 |
+| `configs/benchmark.yaml` | 六任务评测和随机化参数示例 |
+| `configs/pi05_local.yaml` | π0.5 本地推理示例 |
+| `configs/pi05_remote.yaml` | π0.5 远程推理示例 |
+| `configs/pi0_local.yaml`、`configs/smolvla_local.yaml` | 其他本地策略示例 |
+
+**所有学习策略示例中的 `policy.checkpoint` 都需检查并替换。** π0.5 示例包含开发时的
+路径，不保证在其他机器存在；本地路径相对运行目录，远程路径由服务器解释。
+
+### 6.2 学习策略
+
+配置 `policy.backend: local` 或 `remote`，策略类型为 `pi0`、`pi05` 或 `smolvla`。
+检查点需带有匹配的 processor 和归一化统计。状态/动作顺序为：
+
+```text
+shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll, gripper
+```
+
+前五维为度，夹爪为 0–100；图像为 RGB uint8，默认 640×480。检查点图像名称不同时可设置：
 
 ```yaml
 policy:
@@ -102,270 +372,157 @@ policy:
     observation.images.wrist: observation.images.camera2
 ```
 
-三类策略使用 LeRobot 自身的配置、`predict_action_chunk` 和 pre/postprocessor，
-包括动作反归一化及空相机处理。首版支持它们标准的单帧观测配置。
-本地检查点路径和输出路径相对运行目录；远程检查点路径由服务器解释。
-
-远程示例使用独立 `127.0.0.1:8081` 服务，跨机器时填写实际地址。服务器必须使用
-与客户端匹配的 LeRobot 版本，以及相同控制频率；`policy.server_fps` 默认为 30，
-客户端会检查返回动作的时间间隔。PolicyServer 是单客户端会话，运行 benchmark
-期间使用专用实例；每个回合的 `Ready` / 策略设置会清理该实例的状态。
+修改好配置后运行：
 
 ```bash
-# 在持有模型与 GPU 的服务器上启动独立实例
-HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
-uv run python -m lerobot.async_inference.policy_server \
-  --host=127.0.0.1 --port=8081 --fps=30
+env -u PYTHONPATH uv run --no-sync so101-bench eval --config configs/pi05_local.yaml --mode sync
+env -u PYTHONPATH uv run --no-sync so101-bench eval --config configs/pi05_remote.yaml --mode realtime
 ```
 
-同步模式暂停物理时间等待推理。实时模式保持控制步进，剩余动作到一半时请求下一段，
-新段覆盖重叠的未来动作，过时动作丢弃；没有可用动作时保持上一目标，连续 10 秒
-没有新动作则结束回合。模型加载和首段准备放在回合计时之外，并单独记录 setup 时间。
-运行器保持单请求在途，并按回合 ID 拒绝旧结果。两种模式通过独立运行目录分别统计。
+远程服务器在安装了相应 LeRobot/策略依赖的环境中运行：
 
-随机化分为五组，每组独立开关和范围：
-
-- `layout`：物体/盘子位置扰动和方块朝向。
-- `appearance`：灯光亮度与桌面灰度，保持方块语义颜色。
-- `camera`：front/wrist 的位置和旋转扰动，overview 保持固定。
-- `size`：方块尺寸比例。
-- `physics`：方块质量和摩擦比例。
-
-默认只开启布局随机化；关闭组不会消耗其他组的随机数序列。无效/重叠布局有采样上限，
-超过上限明确报错。更大的随机化范围需重新检查任务可达性和物理基线成功率。
-相机可以通过 `sim.cameras.front/overview` 的 `position/target/fovy` 调整，
-`sim.cameras.wrist` 支持 `pos/euler/fovy`（局部米/弧度，fovy 为度）。
-front 默认位置为 `[0.45, 0, 0.35]` 米（基座前方为 +X），
-向下朝机械臂方向俯视 60°，垂直视场角为 45°；光轴与桌面相交于约 `[0.2479, 0, 0]`。
-默认姿态写在 `task_scenes/common.xml`：
-
-```xml
-<camera name="front" pos="0.45 0 0.35"
-        xyaxes="0 1 0 -0.8660254037844386 0 0.5" fovy="45" />
+```bash
+python -m lerobot.async_inference.policy_server --host=127.0.0.1 --port=8081 --fps=30
 ```
 
-front 与 wrist 的默认垂直视场角分别为 45° 和 65°，按当前调试设置使用。
-`xyaxes` 是相机局部 X、Y 轴在世界坐标中的方向，镜头沿局部 -Z 看出去。
-下俯角为 θ 时，此处可写 `0 1 0 -sin(θ) 0 cos(θ)`；`fovy` 是视场角，不是下俯角。
-遥操作主窗口默认显示青色相机示意外壳/视野框、黄色光心/朝向箭头，位置和朝向
-直接跟随最终仿真相机。外壳为示意尺寸，不代表实物相机外形；仅在主窗口渲染，
-不参与碰撞，也不写入 front/wrist 图像。可通过 `sim.cameras.front.show_pose: false` 关闭。
+跨机器部署时将服务器绑定到实际可访问的地址，并修改客户端 `policy.server`。使用匹配的
+LeRobot 版本及控制频率，`policy.server_fps` 必须与 `sim.control_hz` 一致。PolicyServer 为
+单客户端会话，建议给 benchmark 使用独立实例，每回合初始化会清理该实例的策略状态。
 
-从基座开始计数，第二舵机为 `shoulder_lift`；其外壳和安装座碰撞体位于 `shoulder`，
-命名为 `second_servo_housing`、`second_servo_mount`。它们设置 `friction="0 0 0"`、
-`condim="1"`、`priority="2"`，接触仅保留法向约束；高优先级避免对方几何的摩擦覆盖。
-长臂 `upper_arm`、关节自身 `frictionloss` 及阻尼不变。零摩擦不会取消实体碰撞。
+`sync` 暂停物理时间等待推理；`realtime` 按控制周期推进，丢弃过期动作，无新动作时保持
+上一目标，默认连续断供 10 秒终止。实时速度低于目标的 90% 时，报告标记
+`realtime_timing_valid=false`。模型加载和首段准备时间单独统计。
 
+π0、SmolVLA 提供适配接口，但尚未完成匹配检查点的真实权重验证；具体已验证范围见
+[VALIDATION.md](VALIDATION.md)。当前接口支持标准单帧观测配置。
 
-每次运行输出：
+### 6.3 评测结果与回放
 
 ```text
 outputs/<时间戳>_<模式>_<后端>/
-  config.json, provenance.json, results.json, episodes.csv
-  <任务>/seed_<编号>/
-    metadata.json, scene.xml, summary.json, transitions.jsonl
-    overview.mp4, front.mp4, wrist.mp4
+├── config.json, provenance.json
+├── results.json, episodes.csv
+└── <任务>/seed_000000/
+    ├── metadata.json, scene.xml, summary.json
+    ├── transitions.jsonl
+    └── overview.mp4, front.mp4, wrist.mp4  # 开启 video 时生成
 ```
 
-每条 transition 保存动作前状态/图像对应的完整 MuJoCo 快照、请求动作、实际执行动作、
-动作后的指标及 sim/wall 时间。视频一帧对应一条 transition。显示窗口左键旋转第三视角、
-右键平移、滚轮缩放、Esc 关闭；front/wrist 显示原始策略输入帧。
-overview 录像采用固定观察相机，不受鼠标改变视角影响，便于复现比较。
-
-报告包含逐任务成功率、推理耗时、过期动作、断供、控制超时和实际仿真速度。
-实时速度低于目标的 90% 时标记 `realtime_timing_valid=false`，另提供仅纳入有效
-时间预算回合的统计。模型实际任务分数与脚本基线成绩分别记录。
+报告包含成功率、推理耗时、动作过期/断供和运行速度。每条 transition 保存动作前快照、
+请求动作、实际动作、指标及时间，视频一帧对应一条 transition。
 
 ```bash
-# 按存储的状态重建三路视频，也可加 --display
-uv run so101-bench replay --episode-dir outputs/<运行>/<任务>/seed_000000
+# 替换为实际评测回合目录；显示回放且不重新编码视频
+env -u PYTHONPATH uv run --no-sync so101-bench replay \
+  --episode-dir 'outputs/YOUR_RUN/stack_blue_on_red/seed_000000' --display --no-video
 ```
 
-回放使用原配置和已记录的关节/物体状态；请保留任务定义与本项目版本。
-回放优先加载保存的 `scene.xml`；旧输出缺少该文件时，才从任务定义重建。
-外部网格资源与任务评分代码仍需保留；这不保证任意跨版本兼容。
+默认开启视频输出，会在回合目录的 `replay/` 中重建三路录像。无窗口回放时同样需要在
+`--config` 中指定可用的渲染后端。回放优先使用保存的 `scene.xml` 和物理状态；仍需保留
+外部网格及任务代码，不保证任意跨版本兼容。
 
-## 可编辑 XML 场景
-
-内置六个任务直接加载仓库根目录 `task_scenes/<任务 ID>.xml`，共享 `common.xml` 中的
-机械臂、桌面、灯光、天空和相机。任务 XML 包含物体及盘子几何；可以用 MuJoCo 直接打开。
-运行时会展开 include，并在内存副本上应用配置和随机化，不改写源 XML。
-修改后重新启动环境即可生效；当前会话的 R/Space 用于恢复该回合最初布局。
-
-任务 YAML 的 `scene` 指定 XML 文件。相对路径先相对任务 YAML 解析，内置文件名再从
-`task_scenes` 包查找；场景 XML 及机器人资源也会随 wheel 分发。
-XML 默认值 → 显式任务参数/相机 YAML 设置 → 已启用随机化，按此顺序生效。
-物体位置、颜色、质量以及盘子评分尺寸读取最终场景，不被 Python 默认值覆盖。
-方块使用 `<body name="red">`、`<freejoint>` 和 `<geom name="red_geom" type="box">` 等命名；
-任务目标必须保留。盘子保持圆盘或圆角方盘结构，编辑轮廓时应同步调整底面和盘沿几何。
-新增任意形状或评分规则仍需实现对应 Python Task。
-
-## 扩展任务与遥操作
-
-任务由 YAML 指定 ID、Python 类、指令和参数。内置任务目录自动扫描；用户目录通过
-`task_paths` 配置，相对 YAML 所在目录解析。ID 必须唯一；无需修改中央注册表。
-
-```yaml
-# 自定义任务目录中的 blue_small_plate.yaml
-id: blue_small_plate
-class: lerobot_env_so101.tasks.manipulation:PlaceInPlate
-instruction: Pick up the blue cube and place it in the small plate.
-params:
-  target: blue
-  colors: [red, blue, green, yellow, orange]
-  cube_size: 0.025
-  cube_mass: 0.010
-  plate_radius: 0.05
-  plate_shape: rounded_square
-  plate_corner_radius: 0.012
-  plate_base_thickness: 0.002
-  plate_wall_thickness: 0.002
-  plate_rim_height: 0.006
-  plate_xy: [0.18, 0.10]
-  stable_seconds: 1.0
-```
-
-新行为继承 `Task`，实现 `scene()` 和 `evaluate(env)`，需要每回合状态时实现 `reset(env)`。
-圆角方盘的 `plate_radius` 表示外边长的一半；`plate_shape: circle` 可使用圆盘。
-`SceneSpec` 定义物体和盘子，也允许通过 `assets_xml/worldbody_xml` 添加自定义 MJCF。
-任务的 Python 模块应通过本地可编辑包安装，YAML 的 `class` 按模块路径导入。
-`evaluate` 返回 `TaskStatus(success, failure, metrics)`；模型后端、三视角窗口、视频和
-报告都不需要修改。`make_oracle` 是可选的脚本基线接口，使用模型推理不要求实现它。
-
-LeRobot 会自动发现本包的 `so101_bench` 环境配置，可从 `lerobot-eval` 使用：
-
-```bash
-uv run lerobot-eval --env.type=so101_bench --env.task=stack_blue_on_red \
-  --policy.path=../deploy/checkpoints/full/004000/pretrained_model \
-  --eval.n_episodes=1 --eval.batch_size=1
-```
-
-`SO101SimRobot` 提供 `connect/get_observation/send_action/reset_episode/disconnect`
-和 LeRobot 标准特征描述，可用于外部采集循环。每次 `send_action` 推进一个控制周期。
-
-### 矽递版本腕部相机支架
-
-腕部使用矽递官方教程链接的 `SO-ARM101_CAMERA_MOUNT`，来源为
-[soarm_soft_gripper](https://github.com/xiehuangbao888/soarm_soft_gripper) 的 STEP 装配。
-仅提取相机支架，保留原机械臂及硬夹爪。三段连接壁和四条框边采用独立碰撞盒，
-避免用整个支架的凸包封住相机开口；第二舵机外壳/安装座仍为零接触摩擦。
-
-`task_scenes/wrist_camera.xml` 集中定义支架、碰撞体和 wrist 相机，XML 场景及 Python
-生成场景共用。新 STL 已转换到夹爪局部坐标系、单位为米；安装面位于夹爪 +Y 侧，
-安装孔中心距约 8.1 mm。原 wrist_roll 零位映射不变，front 本机配置不受影响。
-
-wrist 光轴沿支架安装面法线，局部绕 X 轴约 -25°，fovy 保持 65°。镜头位置暂按
-安装面外 1.6 mm 电路板厚度加 5 mm 镜头伸出量估算，**不是实测光心标定**；支架
-质量沿用 12 g，也不是实测值。相机 `pos`/`quat` 可在该 XML 中继续按实物调整。
-旧数据的 `scene.xml` 仍引用保留的原支架资产，因此不因新默认支架而改变历史回放。
-
-来源版本、转换矩阵和 SHA256 见包内 `assets/so101/seeed_camera_mount_manifest.json`。
-该外部 STEP 仓库未提供明确的许可证文件，单独记录来源，不将其标记为 Menagerie 的
-Apache-2.0 资产。`tools/convert_seeed_camera_mount.py` 可从固定版本 STEP 重建 STL，
-Gmsh 仅是转换工具依赖，运行仿真不需要安装。
-
-### Front 相机实时调参
-
-无需连接 Leader 或真实相机即可打开独立调参窗口：
-
-```bash
-env -u PYTHONPATH uv run --no-sync so101-bench camera-tune --config configs/fixed.yaml
-# 也可选其他场景
-# ... camera-tune --config configs/fixed.yaml --task place_red_in_plate
-```
-
-左侧实时预览仿真 front 画面，右侧七项滑条和数值框控制前后距离 X、左右平移 Y、
-高度 Z、下俯角、左右转向、画面旋转和垂直视场角 fovy。位置以 cm 为单位，角度以度为
-单位；滑条/微调步长为 0.1，数值框可直接输入。+X 是基座前方、+Y 是基座左侧，转向
-0° 时镜头朝 −X，下俯向下为正，旋转绕镜头光轴。初始默认值为 45、0、35 cm，
-下俯 60°，转向和旋转 0°，fovy 45°。预览中的夹爪默认闭合，保持原始宽高比，不推进物理时间。
-
-- **保存并设为本机默认**：原子写入个人 YAML。修改后可以反复保存，覆盖同一份配置。
-- **恢复上次保存**：重新读取磁盘上的个人参数。
-- **恢复场景默认**：恢复任务 XML 的 front 默认值，需再次保存才能成为新的本机默认。
-- 关闭时有未保存修改，会询问保存、放弃或取消；无效输入不应用、不保存。
-
-个人文件位于 `$XDG_CONFIG_HOME/so101-benchmark/front_camera.yaml`，未设置该环境变量时为
-`~/.config/so101-benchmark/front_camera.yaml`。首次没有个人文件时，预览采用场景 XML 和
-运行 YAML；每次再次打开都会加载上次保存的参数。文件不写入共享 XML、不随 Git 提交。
-不同使用者可以各自调整或复制这份配置，字段为：
-
-```yaml
-front:
-  x_cm: 45
-  y_cm: 0
-  height_cm: 35
-  pitch_deg: 60
-  yaw_deg: 0
-  roll_deg: 0
-  fovy: 45
-```
-
-`tools/teleoperate.py` 启动时自动加载，优先级为 XML → 运行 YAML → 本机 front 配置。
-只覆盖 front，保留 wrist；个人 front 姿态不参与相机随机扰动，任务重置后仍保持一致。
-录制的有效配置与场景快照包含实际相机参数。**运行中的遥操作不会自动切换参数；
-重新启动后使用最新保存值。**普通评测、场景预览和历史回放不隐式读取个人文件。
-
-调参窗口使用 Python 的 Tk 支持；本机 uv Python 已验证可用。若其他 Python 环境缺少
-`tkinter`，需安装其对应的 Tk 组件（例如发行版 Python 的 `python3-tk`）或使用带 Tk 的
-Python。损坏的个人文件会在调参界面提示，可以重新调参并保存修复；遥操作会明确报错，
-避免无提示地使用不同参数。保存失败保留已有文件。
-
-### 实体 Leader → 仿真采集
-
-`tools/teleoperate.py` 读取已校准实体 Leader，打开 overview、front、wrist 三个独立窗口。
-仿真使用本项目的 uv 环境；`--leader-python` 指向已有 LeRobot 和 Feetech 驱动环境。
-官方 LeRobot v3.0 写入进程默认使用同一解释器，也可通过 YAML 的
-`recording.writer_python` 单独指定。不需要实体 Follower。
-
-```bash
-env -u PYTHONPATH uv run --no-sync python tools/teleoperate.py \
-  --config configs/fixed.yaml \
-  --port /dev/serial/by-id/<你的Leader设备> \
-  --leader-id <现有校准ID> \
-  --leader-python /path/to/lerobot-env/bin/python \
-  --task stack_blue_on_red
-```
-
-- 初次进入和每次重置后为 `WAITING`：可以试操作，但不计时、不采集。
-- 按 **Space** 恢复该回合的完整初始场景，再进入 `RECORDING`。按住空格不会重复开始。
-- 成功后自动保存，使用下一 seed 在原窗口中重置，再等待 Space；窗口位置、大小和主视角保留。
-- 失败、超时或按 **R** 丢弃当前回合并重试同一 seed；等待时 R 恢复初始场景。
-- **Esc** 或关闭任一窗口退出，丢弃未完成回合并完成成功数据的收尾。
-- 主窗口现有顶部信息行追加 `Saved episodes: N | Space: start recording`。
-  N 为本次会话已经确认保存的成功回合数，重置不清零；保存中不会提前增加。
-
-使用已有 YAML 的 `sim.episode_seconds` 作为回合时限（默认 60 秒），频率、图像大小、
-机械臂映射、相机和随机化也来自同一配置。等待时间不占用回合时限。
-可选 `--seconds 300` 仅限制整个会话的墙钟时间，默认不限时；评测用 `episodes` 不限制采集数量。
-`--task` 覆盖 YAML 的单任务设置，默认 `tasks: [all]` 在遥操作中选择叠放任务。
-
-每次运行创建独立的 `outputs/teleop_<时间戳>/`，或用 `--output` 指定尚不存在的目录：
+## 7. 配置与 XML 场景
 
 ```text
-config.json, provenance.json, summary.json, writer.log
- dataset/                  # 官方 LeRobot v3.0：meta/、data/、videos/
- episodes/episode_000000/   # 成功回合的 metadata.json、scene.xml
+so101-benchmark/
+├── configs/                         # 运行、评测配置
+├── task_scenes/                     # 可直接编辑的 MJCF XML
+│   ├── common.xml                   # 机械臂、桌面、天空、灯光、front
+│   ├── wrist_camera.xml             # 腕部支架、碰撞体、wrist
+│   └── <任务 ID>.xml                # 方块、盘子等任务物体
+├── src/lerobot_env_so101/
+│   ├── assets/so101/                # 机器人网格、上游 XML、来源记录
+│   ├── task_configs/                # 任务 ID、指令、类和参数
+│   ├── tasks/                      # 成功判定与任务逻辑
+│   ├── camera_tuner.py              # 相机调参窗口
+│   └── teleop.py                    # 采集状态与数据写入协调
+├── tools/teleoperate.py             # Leader 遥操作启动入口
+├── tests/
+└── outputs/                         # 本地结果，不随 Git 提交
 ```
 
-数据集保存六维关节状态、实际应用动作、任务说明及 front/wrist 两路 H.264 视频。
-每帧是动作执行前的观察，时间戳按控制频率从 0 开始；overview 只用于查看。
-`recording.repo_id` 默认 `local/<任务 ID>`，数据只写本地，不上传 Hub。
-传输队列有容量限制；写入失败或队列满时界面显示 `ERROR` 并停止采集，详细信息在会话日志中。
+运行 YAML 叠加到默认配置，CLI 参数优先于 YAML。相机/场景的生效顺序是 XML 默认值 →
+显式任务参数和运行配置 → 启用的随机化；遥操作还会在启动时应用个人 front 参数，并固定该相机。
 
-## 验证
+XML 在内存中展开 include 后加载，不改写源文件。编辑后重新启动环境生效，当前窗口的
+R/Space 不会重新读取 XML。可以用 MuJoCo 直接加载六个任务 XML；它们和网格也随 wheel 分发。
+
+随机化分 `layout`、`appearance`、`camera`、`size`、`physics` 五组，默认只开启布局组。
+更改范围后应复查可达性。相机可通过 `sim.cameras.<名称>` 指定 `position`/`pos`、`quat`、
+`target` 或 `euler`、`fovy`；位置单位为米，Euler 角为弧度，fovy 为度，四元数顺序为 wxyz。
+front 为世界坐标，wrist 为所属机械臂部件的局部坐标。使用 `fixed: true` 可排除该相机随机化。
+
+扩展任务时在 `task_paths` 指定的目录中新增任务 YAML，包含唯一 `id`、`class`、
+`instruction` 和 `params`；路径相对运行 YAML 解析。可复用现有 `PlaceInPlate`/`StackBlueOnRed` 类，
+新增行为则继承 `Task` 并实现 `scene()`、`evaluate(env)`，按需实现 `reset(env)` 和
+`make_oracle(env)`。参照 [`task_configs`](src/lerobot_env_so101/task_configs) 和
+[`tasks`](src/lerobot_env_so101/tasks)。评分依赖约定的物体/盘子结构，任意新几何不等于自动支持新评分规则。
+
+LeRobot 环境插件名为 `so101_bench`，可从 `lerobot-eval --env.type=so101_bench` 接入；
+`SO101SimRobot` 也提供 `connect/get_observation/send_action/reset_episode/disconnect` 接口。
+
+## 8. 模型来源与实物对齐
+
+机械臂主体来自 [MuJoCo Menagerie 的 robotstudio_so101](https://github.com/google-deepmind/mujoco_menagerie/tree/ac6b2b09983786f3036cab1000221017fa2193b4/robotstudio_so101)，
+基于 TheRobotStudio SO101 设计，原始资产采用 Apache-2.0。固定版本和 SHA256 见
+[`manifest.json`](src/lerobot_env_so101/assets/so101/manifest.json)。
+
+腕部替换为[矽递官方教程](https://wiki.seeedstudio.com/lerobot_so100m_new/#3d-printing-guide)
+链接的 [soarm_soft_gripper STEP](https://github.com/xiehuangbao888/soarm_soft_gripper) 中的
+`SO-ARM101_CAMERA_MOUNT`，仅提取支架，保留硬夹爪。来源版本、坐标变换和网格校验值见
+[`seeed_camera_mount_manifest.json`](src/lerobot_env_so101/assets/so101/seeed_camera_mount_manifest.json)。
+该外部仓库未提供明确许可证文件，独立记录来源，不将其标记为 Menagerie 的 Apache-2.0 资产。
+转换工具 [`tools/convert_seeed_camera_mount.py`](tools/convert_seeed_camera_mount.py) 可重建 STL，
+Gmsh 仅在转换时需要，运行仿真不需要安装。
+
+当前实物对齐设置：
+
+- 关节转换为 `q_sim = radians((角度 - offset) * sign)`；offset 默认
+  `[0, 0, 0, 0, 90]`，Leader 的 wrist_roll 零度对应仿真 −90°。
+- front 默认前方 45 cm、高 35 cm、下俯 60°、fovy 45°。主窗口的相机位置标记为辅助显示，
+  不进入训练图像或参与碰撞；设置 `sim.cameras.front.show_pose: false` 可关闭。
+- wrist fovy 65°，光轴沿新支架安装面法线；局部绕 X 轴约 −25°，不是相对桌面的俯角。
+  光心按安装面外 1.6 mm PCB 加 5 mm 镜头伸出量估算，支架质量沿用 12 g，均非实测标定。
+- 从基座起第二个舵机的外壳/安装座为 `second_servo_housing`、`second_servo_mount`，
+  接触参数为 `friction="0 0 0"`、`condim="1"`、`priority="2"`。保留实体碰撞，
+  仅消除接触摩擦；关节自身 frictionloss、阻尼和长臂摩擦不变。
+
+不同批次的实物支架、镜头与舵机零位仍需核对。原支架网格保留，以支持已有场景快照回放。
+
+## 9. 开发与验证
 
 ```bash
-uv run pytest tests -q
-uv run ruff check src tests tools
-uv run ruff format --check src tests tools
+# EGL 平台；没有 EGL 时根据环境改为 osmesa
+env -u PYTHONPATH MUJOCO_GL=egl uv run --no-sync pytest tests -q
+
+# 需要桌面的 GUI 检查，只操作仿真
+env -u PYTHONPATH MUJOCO_GL=glfw SO101_TEST_GUI=1 \
+  uv run --no-sync pytest tests/test_camera_tuner_gui.py tests/test_teleop_viewer.py -q
+
+uv run --no-sync ruff check src tests tools
+uv run --no-sync ruff format --check src tests tools
 uvx pre-commit run --all-files
+uv build
 ```
 
-详细结果见 [VALIDATION.md](VALIDATION.md)。π0 和 SmolVLA 适配已提供，尚未取得匹配
-检查点进行真实权重验证。新增/修改任务后，先检查成功判定与脚本基线，再运行模型评测。
+设置 `SO101_DATASET_PYTHON=/path/to/lerobot-env/bin/python` 可启用独立 LeRobot 环境的
+数据集写入集成测试；可选依赖未安装时相关测试会跳过。安装步骤、测试范围和历史结果见
+[VALIDATION.md](VALIDATION.md)，功能变更见 [CHANGELOG.md](CHANGELOG.md)。普通软件检查
+无需连接电机或真实相机。个人相机配置、校准文件、运行日志和原始数据不应提交到 Git。
 
-Menagerie 原始资产来源、固定版本和 SHA256 位于 `assets/so101/manifest.json`（包内），
-使用 Apache-2.0，原始许可证保留在资产目录。新增矽递教程支架单独记录来源，见上文。
-场景构建时增加桌面、任务物体、相机，使用
-600 Hz 物理步长与 multiccd 碰撞求解；原始机器人文件保持原样。
+## 10. 常见问题
+
+| 问题 | 排查方法 |
+| --- | --- |
+| 新克隆后安装提示找不到 `../lerobot` | 使用 1.2 节的独立安装命令；源码开发模式才要求同级仓库 |
+| `uv sync --locked` 提示锁文件需更新 | 检查同级 LeRobot 版本；已安装环境用 `--no-sync` 运行，独立安装见 1.2 节 |
+| 没有显示窗口 | 确认使用 `--display` 或 GUI/遥操作入口，且当前终端连接可用桌面显示；纯 SSH 通常不能直接弹出本地窗口 |
+| `libOSMesa.so` 缺失或 EGL 初始化失败 | 安装对应渲染库/驱动，或在 YAML 中选择可用后端；GUI 使用 GLFW |
+| 相机调参提示没有 Tk | 检查当前 Python 的 `import tkinter`，系统 `python3-tk` 不一定适用于 uv/Conda Python |
+| 保存 front 参数后画面没变 | 重启遥操作；普通预览和评测不自动读取个人配置 |
+| 本机相机 YAML 损坏 | 调参窗口会提示，可重新调整并保存修复；遥操作会报错，避免静默使用其他参数 |
+| Leader 串口或校准报错 | 核对 by-id 路径、访问权限、端口是否被占用、校准 ID 与当前硬件是否一致 |
+| 窗口能动但没有数据 | `WAITING` 不采集，先按 Space；只保存满足任务规则的成功回合 |
+| 退出前看到 `ERROR` | 查看终端及 `writer.log`，确认写入 Python 支持 v3.0 API 和编码依赖 |
+| 回放提示缺少 `transitions.jsonl` | 使用评测回合目录；遥操作的 LeRobot 数据集应使用 LeRobot 工具读取 |
+| 策略无法加载 | 检查 checkpoint、processor、动作单位、图像名称和 LeRobot 版本；示例路径需替换 |
