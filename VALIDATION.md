@@ -1,5 +1,27 @@
 # 验证记录
 
+## Front 相机调参窗口复验（2026-09-17）
+
+- 全套测试：**73 passed、6 skipped**，包括独立 LeRobot 环境的官方数据集写入测试。
+  其中三项 GUI 测试改在 GLFW 桌面下单独运行，**3 passed**；其余跳过项需要可选
+  LeRobot/gRPC 依赖。
+- 七项参数均验证即时改变 front 图像，保持模型、渲染器及完整物理状态；完整朝向转换
+  覆盖正负 90° 俯角。wrist 相机不受个人 front 参数影响。
+- 验证保存、重新打开、修改后覆盖保存、恢复、非法输入、损坏文件恢复、保存失败保留旧文件，
+  以及关闭时保存/放弃/取消。新遥操作配置使用最新文件，已有会话与重置保持启动参数。
+- 检查实际相机位置、朝向和 fovy 进入有效配置与场景快照；XML 和 Python 场景一致。
+- 桌面截图确认中文标签、全部控件和保存按钮可见，预览保持宽高比；兼容当前 Tk 的中文字体。
+- wheel 构建后在独立解包目录导入新模块、加载场景网格并渲染成功。
+- 本轮仅使用仿真，没有连接实体 Leader 或真实相机；测试配置均使用临时路径。
+
+```bash
+env -u PYTHONPATH MUJOCO_GL=egl SO101_DATASET_PYTHON=/path/to/lerobot-env/bin/python \
+  uv run --no-sync pytest tests -q
+env -u PYTHONPATH MUJOCO_GL=glfw SO101_TEST_GUI=1 \
+  uv run --no-sync pytest tests/test_camera_tuner_gui.py tests/test_teleop_viewer.py -q
+uvx pre-commit run --all-files
+```
+
 ## 相机可视化与第二舵机外壳复验（2026-09-17）
 
 - 全套测试：51 passed、5 skipped；其中 GUI 在 GLFW 显示下单独运行，1 passed。

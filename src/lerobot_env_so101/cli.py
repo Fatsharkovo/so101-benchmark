@@ -11,7 +11,7 @@ from .tasks.base import discover
 
 def main():
     parser = argparse.ArgumentParser(description="SO-101 MuJoCo benchmark")
-    parser.add_argument("command", choices=["list", "preview", "eval", "replay"])
+    parser.add_argument("command", choices=["list", "preview", "eval", "replay", "camera-tune"])
     parser.add_argument("--config")
     parser.add_argument("--task", help="Comma-separated task ids, or all")
     parser.add_argument("--episodes", type=int)
@@ -29,9 +29,15 @@ def main():
     }
     if args.task:
         overrides["tasks"] = args.task.split(",")
+    if args.command == "camera-tune":
+        overrides.update(display=False, sim={"images": True, "render_backend": "glfw"})
     cfg = load_config(args.config, overrides)
     os.environ["MUJOCO_GL"] = cfg.sim.render_backend
-    if args.command == "list":
+    if args.command == "camera-tune":
+        from .camera_tuner import run_camera_tuner
+
+        run_camera_tuner(cfg)
+    elif args.command == "list":
         for task_id, definition in discover(cfg.task_paths).items():
             print(f"{task_id}: {definition['instruction']}")
     elif args.command == "eval":

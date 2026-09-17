@@ -243,6 +243,53 @@ uv run lerobot-eval --env.type=so101_bench --env.task=stack_blue_on_red \
 `SO101SimRobot` 提供 `connect/get_observation/send_action/reset_episode/disconnect`
 和 LeRobot 标准特征描述，可用于外部采集循环。每次 `send_action` 推进一个控制周期。
 
+### Front 相机实时调参
+
+无需连接 Leader 或真实相机即可打开独立调参窗口：
+
+```bash
+env -u PYTHONPATH uv run --no-sync so101-bench camera-tune --config configs/fixed.yaml
+# 也可选其他场景
+# ... camera-tune --config configs/fixed.yaml --task place_red_in_plate
+```
+
+左侧实时预览仿真 front 画面，右侧七项滑条和数值框控制前后距离 X、左右平移 Y、
+高度 Z、下俯角、左右转向、画面旋转和垂直视场角 fovy。位置以 cm 为单位，角度以度为
+单位；滑条/微调步长为 0.1，数值框可直接输入。+X 是基座前方、+Y 是基座左侧，转向
+0° 时镜头朝 −X，下俯向下为正，旋转绕镜头光轴。初始默认值为 45、0、35 cm，
+下俯 60°，转向和旋转 0°，fovy 45°。预览保持原始宽高比，不推进物理时间。
+
+- **保存并设为本机默认**：原子写入个人 YAML。修改后可以反复保存，覆盖同一份配置。
+- **恢复上次保存**：重新读取磁盘上的个人参数。
+- **恢复场景默认**：恢复任务 XML 的 front 默认值，需再次保存才能成为新的本机默认。
+- 关闭时有未保存修改，会询问保存、放弃或取消；无效输入不应用、不保存。
+
+个人文件位于 `$XDG_CONFIG_HOME/so101-benchmark/front_camera.yaml`，未设置该环境变量时为
+`~/.config/so101-benchmark/front_camera.yaml`。首次没有个人文件时，预览采用场景 XML 和
+运行 YAML；每次再次打开都会加载上次保存的参数。文件不写入共享 XML、不随 Git 提交。
+不同使用者可以各自调整或复制这份配置，字段为：
+
+```yaml
+front:
+  x_cm: 45
+  y_cm: 0
+  height_cm: 35
+  pitch_deg: 60
+  yaw_deg: 0
+  roll_deg: 0
+  fovy: 45
+```
+
+`tools/teleoperate.py` 启动时自动加载，优先级为 XML → 运行 YAML → 本机 front 配置。
+只覆盖 front，保留 wrist；个人 front 姿态不参与相机随机扰动，任务重置后仍保持一致。
+录制的有效配置与场景快照包含实际相机参数。**运行中的遥操作不会自动切换参数；
+重新启动后使用最新保存值。**普通评测、场景预览和历史回放不隐式读取个人文件。
+
+调参窗口使用 Python 的 Tk 支持；本机 uv Python 已验证可用。若其他 Python 环境缺少
+`tkinter`，需安装其对应的 Tk 组件（例如发行版 Python 的 `python3-tk`）或使用带 Tk 的
+Python。损坏的个人文件会在调参界面提示，可以重新调参并保存修复；遥操作会明确报错，
+避免无提示地使用不同参数。保存失败保留已有文件。
+
 ### 实体 Leader → 仿真采集
 
 `tools/teleoperate.py` 读取已校准实体 Leader，打开 overview、front、wrist 三个独立窗口。

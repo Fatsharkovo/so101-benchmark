@@ -52,6 +52,7 @@ def run(args: argparse.Namespace) -> None:
 
     import numpy as np
 
+    from lerobot_env_so101.camera_profile import apply_local_profile
     from lerobot_env_so101.config import JOINTS, load_config
     from lerobot_env_so101.env import SO101Env
     from lerobot_env_so101.recording import write_json
@@ -63,6 +64,9 @@ def run(args: argparse.Namespace) -> None:
     if args.task:
         overrides["tasks"] = [args.task]
     config = load_config(args.config, overrides)
+    camera_profile = apply_local_profile(config.sim)
+    if camera_profile:
+        print(f"Using personal front camera: {camera_profile}", flush=True)
     if len(config.tasks) != 1:
         raise ValueError("Teleoperation needs a single YAML task or --task override")
     task = config.tasks[0] if config.tasks != ["all"] else "stack_blue_on_red"
