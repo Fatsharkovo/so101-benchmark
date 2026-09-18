@@ -77,11 +77,12 @@ def test_count_increases_only_after_save_ack_and_survives_resets(session):
     session.reset()
     session.writer.events.append({"event": "discarded"})
     session.poll()
-    assert session.saved_episodes == 1 and session.seed == 5
+    assert session.saved_episodes == 1 and session.seed == 7
 
 
 @pytest.mark.parametrize("ending", ["timeout", "failure", "reset"])
-def test_unsuccessful_recordings_discard_and_retry_same_seed(session, ending):
+def test_unsuccessful_recordings_discard_and_advance_layout_after_ack(session, ending):
+    before = session.env.sampled
     session.start()
     if ending == "failure":
         session.env.task_impl.evaluate = lambda env: TaskStatus(failure="object_fell")
@@ -92,9 +93,69 @@ def test_unsuccessful_recordings_discard_and_retry_same_seed(session, ending):
     assert session.state == "DISCARDING"
     assert session.writer.commands[-1][0] == "discard"
     assert not any(c[0] == "save" for c in session.writer.commands)
+    assert session.seed == 4 and session.env.sampled == before
+    session.reset()  # Repeated R while discarding must not discard or reset twice.
+    assert len([c for c in session.writer.commands if c[0] == "discard"]) == 1
     session.writer.events.append({"event": "discarded"})
     session.poll()
-    assert session.seed == 4 and session.saved_episodes == 0 and session.env.step_index == 0
+    assert session.seed == 5 and session.saved_episodes == 0 and session.env.step_index == 0
+    assert session.env.sampled["objects"] != before["objects"]
+    assert session.state == "WAITING"
+    assert session.resets == 1
+    session.writer.events.append({"event": "discarded"})
+    session.poll()
+    assert session.seed == 5 and session.resets == 1
+
+
+@pytest.mark.parametrize("task", ["place_blue_in_plate", "stack_green_on_yellow"])
+def test_each_waiting_reset_resamples_but_space_keeps_new_layout(task):
+    config = load_config("configs/teleop.yaml", overrides={"video": False, "sim": {"images": False}})
+    env = SO101Env(task, config.sim)
+    try:
+        env.reset(seed=0)
+        writer = Writer()
+        session = TeleopSession(env, writer, config, 0)
+        session.poll()
+        before = env.sampled
+        for seed in (1, 2, 3):
+            session.reset()
+            assert session.seed == seed and env.sampled["seed"] == seed
+            for name in env.object_sizes:
+                assert env.sampled["objects"][name]["position"] != before["objects"][name]["position"]
+            if "plate_xy" in before:
+                assert env.sampled["plate_xy"] != before["plate_xy"]
+            assert session.state == "WAITING" and env.step_index == 0
+            assert session.saved_episodes == 0 and not writer.commands
+            before = env.sampled
+        initial_qpos = env.data.qpos.copy()
+        scene_xml = env.model_xml
+        model = env.model
+        session.start()
+        assert session.seed == 3 and env.sampled == before
+        assert env.model is model and env.model_xml == scene_xml
+        np.testing.assert_array_equal(env.data.qpos, initial_qpos)
+        env.task_impl.evaluate = lambda env: TaskStatus(success=True)
+        session.step(env.applied_action)
+        payload = writer.commands[-1][1]
+        assert payload["seed"] == 3 and payload["sampled"] == before
+        assert payload["scene_xml"] == scene_xml
+        np.testing.assert_array_equal(payload["initial_state"]["qpos"], initial_qpos)
+    finally:
+        env.close()
+
+
+def test_explicit_fixed_layout_config_remains_fixed():
+    config = load_config("configs/fixed.yaml", overrides={"video": False, "sim": {"images": False}})
+    env = SO101Env("stack_blue_on_red", config.sim)
+    try:
+        env.reset(seed=0)
+        before = env.sampled["objects"]
+        session = TeleopSession(env, Writer(), config, 0)
+        session.poll()
+        session.reset()
+        assert session.seed == 1 and env.sampled["objects"] == before
+    finally:
+        env.close()
 
 
 def test_writer_error_does_not_count_or_continue(session):

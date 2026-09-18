@@ -126,6 +126,15 @@ class TeleopSession:
         self.error = str(error)
         self.state = "ERROR"
 
+    def _next_layout(self):
+        """Advance once per reset, after any pending dataset operation is acknowledged."""
+        seed = self.seed + 1
+        self.observation, self.info = self.env.reset(seed=seed)
+        self.seed = seed
+        self.initial_snapshot = self.env.snapshot()
+        self.state = "WAITING"
+        self.resets += 1
+
     def poll(self):
         for event in self.writer.poll():
             kind = event["event"]
@@ -135,17 +144,11 @@ class TeleopSession:
                 continue
             elif kind == "ready":
                 self.state = "WAITING"
-            elif kind == "saved":
+            elif kind == "saved" and self.state == "SAVING":
                 self.saved_episodes = event["count"]
-                self.seed += 1
-                self.observation, self.info = self.env.reset(seed=self.seed)
-                self.state = "WAITING"
-                self.resets += 1
-            elif kind == "discarded":
-                self.observation = self.env.restore_initial()
-                self.info = {}
-                self.state = "WAITING"
-                self.resets += 1
+                self._next_layout()
+            elif kind == "discarded" and self.state == "DISCARDING":
+                self._next_layout()
 
     def start(self):
         if self.state == "WAITING":
@@ -159,9 +162,7 @@ class TeleopSession:
             self.writer.submit("discard")
             self.state = "DISCARDING"
         elif self.state == "WAITING":
-            self.observation = self.env.restore_initial()
-            self.info = {}
-            self.resets += 1
+            self._next_layout()
 
     def step(self, action):
         if self.state == "WAITING":
