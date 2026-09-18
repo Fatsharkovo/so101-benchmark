@@ -43,9 +43,10 @@ def test_all_objects_cover_workspace_with_clearance_and_repeatable_seeds(task_id
                 radius = layout["objects"][name]["size"] / np.sqrt(2)
                 assert spec.plate_distance(position - layout["plate_xy"]) >= radius + 0.025
             xy["plate"] = np.array(layout["plate_xy"])
-        for position in xy.values():
+        for name, position in xy.items():
+            lateral_limit = 0.18 if name == "plate" else 0.15
             assert 0.12 <= position[0] <= 0.27
-            assert -0.18 <= position[1] <= 0.18
+            assert -lateral_limit <= position[1] <= lateral_limit
             assert 0.19 <= np.linalg.norm(position) <= 0.29
         if seed:
             for name in layout["objects"]:

@@ -18,8 +18,8 @@ def sample_workspace(
     the largest footprint; shuffle cubes to avoid a fixed color priority.
     """
 
-    def point() -> np.ndarray | None:
-        xy = rng.uniform([0.12, -0.18], [0.27, 0.18])
+    def point(lateral_limit: float = 0.15) -> np.ndarray | None:
+        xy = rng.uniform([0.12, -lateral_limit], [0.27, lateral_limit])
         return xy if 0.19 <= np.linalg.norm(xy) <= 0.29 else None
 
     for _ in range(100):
@@ -27,7 +27,7 @@ def sample_workspace(
         plate_xy = None
         if spec.plate_xy is not None:
             for _ in range(200):
-                plate_xy = point()
+                plate_xy = point(lateral_limit=0.18)
                 if plate_xy is not None:
                     break
             else:
