@@ -198,7 +198,7 @@ class SO101Env(gym.Env):
         corners = np.array(list(product([-0.5, 0.5], repeat=3))) * self.object_sizes[name]
         return corners @ body.xmat.reshape(3, 3).T + body.xpos
 
-    def in_plate(self, name: str, fully: bool = True) -> bool:
+    def in_plate(self, name: str, fully: bool = True, edge_tolerance: float = 0.0) -> bool:
         if self.scene_spec.plate_xy is None:
             return False
         corners = self.object_corners(name)
@@ -208,7 +208,8 @@ class SO101Env(gym.Env):
         center = (self.object_position(name) - plate.xpos) @ rotation
         if fully:
             return bool(
-                np.max(self.scene_spec.plate_distance(corners[:, :2])) < -self.scene_spec.plate_wall_thickness
+                np.max(self.scene_spec.plate_distance(corners[:, :2]))
+                < -self.scene_spec.plate_wall_thickness + edge_tolerance
                 and np.min(corners[:, 2]) < self.scene_spec.plate_base_thickness + 0.006
             )
         return bool(

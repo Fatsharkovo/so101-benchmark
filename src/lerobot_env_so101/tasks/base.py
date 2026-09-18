@@ -35,7 +35,9 @@ class SceneSpec:
     plate_corner_radius: float = 0.012
     plate_base_thickness: float = 0.002
     plate_wall_thickness: float = 0.002
-    plate_rim_height: float = 0.006
+    plate_rim_height: float = 0.010
+    plate_mass: float = 0.050
+    plate_movable: bool = True
 
     def __post_init__(self):
         if self.plate_radius <= 0 or len({o.name for o in self.objects}) != len(self.objects):
@@ -44,6 +46,8 @@ class SceneSpec:
             raise ValueError("Unsupported plate shape")
         if min(self.plate_base_thickness, self.plate_wall_thickness, self.plate_rim_height) <= 0:
             raise ValueError("Plate thickness and rim height must be positive")
+        if self.plate_mass <= 0 or not isinstance(self.plate_movable, bool):
+            raise ValueError("Plate requires positive mass and a boolean movable flag")
         if self.plate_wall_thickness >= self.plate_radius:
             raise ValueError("Plate wall must be thinner than half width")
         if (
