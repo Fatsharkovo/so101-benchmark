@@ -299,11 +299,13 @@ v3.0 写入接口；写入失败或队列满会停止采集，不会静默丢帧
 
 ### 4.4 运动平滑设置
 
-遥操作默认使用 `configs/teleop.yaml`，固定布局并开启：
+遥操作默认使用 `configs/teleop.yaml`，开启小范围布局随机化和目标插值：
 
 ```yaml
 sim:
   interpolate_actions: true
+  randomization:
+    layout: {enabled: true, position_jitter: 0.015, yaw_deg: [-8, 8]}
 ```
 
 每个 30 Hz 控制周期内，将上一个目标角度到新目标的变化均匀分配到 20 个 600 Hz
@@ -314,6 +316,10 @@ sim:
 插值从上一条控制目标开始，不从实际关节位置开始，避免夹持物体时反复撤回夹紧目标。
 R/Space 重置也恢复插值起点。数据集 `action` 仍记录当前周期的最终目标，配置和回合
 元数据记录插值开关；用该数据训练的策略在本项目中评测时，建议也显式开启同一设置。
+
+盘子和各方块的初始位置在原摆放点的前后、左右各 ±1.5 cm 内随机，方块朝向 ±8°；
+采样会检查可达半径和物体间距。成功保存后，下个回合按新 seed 采样；R/Space 恢复
+本回合初始布局，便于重试。相同 seed 可复现相同布局。需要固定摆放时，将 layout.enabled 设为 false。
 
 需要与旧控制比较时，设置 `interpolate_actions: false`，或使用
 `--config configs/fixed.yaml`。普通评测默认保持旧的阶跃控制，历史配置未声明此字段时为 false。
@@ -331,7 +337,11 @@ R/Space 重置也恢复插值起点。数据集 `action` 仍记录当前周期�
 | `stack_blue_on_red` | 将蓝块叠放到红块上 |
 
 五色任务在相同 seed 下使用相同布局，仅目标颜色不同。目标必须有机械臂接触和离桌抬升
-记录；入盘要求目标整体在盘沿内、由盘面支撑，其他方块不占盘内区域。允许误放后取出纠正。
+记录；入盘要求目标在盘沿内（允许下述边缘误差）、由盘面支撑，其他方块不占盘内区域。
+允许误放后取出纠正。盘子可被机械臂推拖，判定跟随盘子当前位姿；
+入盘任务使用较宽松的判定：稳定 0.5 秒，线速度小于 2 cm/s、角速度小于 0.3 rad/s，
+盘沿允许 2 mm 边缘误差。允许轻触盘沿，但目标方块仍需松开且受盘底支撑；悬空、
+骑在盘沿或其他颜色占盘内仍不算成功。叠块任务判定不变。
 
 叠放要求蓝块由红块支撑、红块留在桌上且两块直立；默认横向偏差小于较小方块边长的 30%，
 高度误差小于 4 mm。成功时机械臂须释放所有方块，目标连续稳定 1 秒（线速度低于
@@ -341,10 +351,11 @@ R/Space 重置也恢复插值起点。数据集 `action` 仍记录当前周期�
 | --- | --- |
 | 方块 | 边长 25 mm，质量 10 g |
 | 盘子 | 浅蓝色圆角正方形，外边长 100 mm，圆角半径 12 mm |
-| 盘厚度 | 底面/盘沿厚 2 mm，盘沿高出底面 6 mm，总高 8 mm |
+| 盘厚度 | 底面/盘沿厚 2 mm，盘沿高出底面 10 mm，总高 12 mm |
 | 控制/物理频率 | 30 Hz / 600 Hz |
 | 单回合时间 | 60 秒（`smoke.yaml` 为 20 秒） |
-| 布局随机化 | 默认位置每轴 ±5 mm，朝向 ±5°；`fixed.yaml` 关闭 |
+| 盘子动力学 | 自由移动/转动；质量暂设 50 g（未实测），桌面滑动摩擦系数 0.8 |
+| 布局随机化 | 遥操作位置每轴 ±15 mm，方块朝向 ±8°；普通默认 ±5 mm / ±5°；`fixed.yaml` 关闭 |
 
 场景使用明亮天空和无限视觉地面；外围地面不参与碰撞，实际操作区域仍是桌面。
 叠放两块位于基座前方约 19 cm，左右各 4.5 cm。
@@ -372,7 +383,7 @@ env -u PYTHONPATH uv run --no-sync so101-bench eval \
 
 | 配置 | 用途 |
 | --- | --- |
-| `configs/teleop.yaml` | 遥操作默认配置，固定布局、开启目标插值 |
+| `configs/teleop.yaml` | 遥操作默认配置，小范围随机布局、开启目标插值 |
 | `configs/fixed.yaml` | 固定布局，旧阶跃控制，适合对比调试 |
 | `configs/smoke.yaml` | 无图像、无视频的脚本检查 |
 | `configs/benchmark.yaml` | 六任务评测和随机化参数示例 |
@@ -486,6 +497,9 @@ front 为世界坐标，wrist 为所属机械臂部件的局部坐标。使用 `
 新增行为则继承 `Task` 并实现 `scene()`、`evaluate(env)`，按需实现 `reset(env)` 和
 `make_oracle(env)`。参照 [`task_configs`](src/lerobot_env_so101/task_configs) 和
 [`tasks`](src/lerobot_env_so101/tasks)。评分依赖约定的物体/盘子结构，任意新几何不等于自动支持新评分规则。
+盘底使用圆角网格显示，用透明的 box/cylinder 组合提供稳定接触；手改 XML 尺寸时需要
+同时调整显示网格和碰撞几何，或用任务参数 `plate_radius` / `plate_corner_radius` 等统一生成。
+`plate_mass`（kg）和 `plate_movable` 可通过任务参数覆盖。
 
 LeRobot 环境插件名为 `so101_bench`，可从 `lerobot-eval --env.type=so101_bench` 接入；
 `SO101SimRobot` 也提供 `connect/get_observation/send_action/reset_episode/disconnect` 接口。

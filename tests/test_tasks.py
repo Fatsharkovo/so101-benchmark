@@ -85,8 +85,9 @@ def test_placement_without_lift_is_not_success(env):
 def test_stability_timer_resets_and_rim_is_not_inside(env):
     env.task_impl.grasped = env.task_impl.lifted = True
     relocate(env, "red", [*env.sampled["plate_xy"], 0.02])
-    settle(env, 20)
-    assert env.task_impl.stable_steps < 30
+    hold_steps = int(env.task_impl.params["stable_seconds"] * env.cfg.control_hz)
+    settle(env, hold_steps - 5)
+    assert env.task_impl.stable_steps < hold_steps
     xy = env.sampled["plate_xy"]
     relocate(env, "red", [xy[0] + env.scene_spec.plate_radius, xy[1], 0.028])
     env.step(env.applied_action)

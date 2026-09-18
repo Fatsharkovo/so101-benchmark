@@ -117,6 +117,12 @@ def derive_spec(root: ET.Element, spec: SceneSpec) -> None:
     if plate is None:
         return
     spec.plate_xy = tuple(np.fromstring(plate.get("pos"), sep=" ")[:2])
+    spec.plate_movable = plate.find("freejoint") is not None or plate.find("joint[@type='free']") is not None
+    inertial = plate.find("inertial")
+    if inertial is not None:
+        spec.plate_mass = float(inertial.get("mass"))
+    elif all("mass" in geom.attrib for geom in plate.findall("geom")):
+        spec.plate_mass = sum(float(geom.get("mass")) for geom in plate.findall("geom"))
     bottom = plate.find("geom[@name='plate_bottom']")
     if bottom.get("type") == "mesh":
         mesh = root.find(f"asset/mesh[@name='{bottom.get('mesh')}']")

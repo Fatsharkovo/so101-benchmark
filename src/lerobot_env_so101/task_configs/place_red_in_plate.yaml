@@ -3,6 +3,9 @@ class: lerobot_env_so101.tasks.manipulation:PlaceInPlate
 instruction: Pick up the red cube and place it in the plate.
 params:
   target: red
-  stable_seconds: 1.0
+  stable_seconds: 0.5
+  linear_speed: 0.02
+  angular_speed: 0.3
+  plate_edge_tolerance: 0.002
 
 scene: place_red_in_plate.xml

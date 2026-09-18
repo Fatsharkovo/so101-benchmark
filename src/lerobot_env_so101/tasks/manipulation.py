@@ -49,6 +49,12 @@ class ManipulationTask(Task):
 
 
 class PlaceInPlate(ManipulationTask):
+    def __init__(self, definition):
+        super().__init__(definition)
+        tolerance = self.params.get("plate_edge_tolerance", 0.0)
+        if not np.isfinite(tolerance) or not 0 <= tolerance <= 0.005:
+            raise ValueError("plate_edge_tolerance must be between 0 and 0.005 metres")
+
     def scene(self) -> SceneSpec:
         positions = [(0.14, -0.10), (0.20, -0.105), (0.235, -0.05), (0.15, -0.035), (0.21, 0.015)]
         positions = dict(zip(COLORS, positions, strict=True))
@@ -66,7 +72,7 @@ class PlaceInPlate(ManipulationTask):
             )
             for name in names
         ]
-        self.stable_objects = [self.params["target"]]
+        self.stable_objects = [self.params["target"], "plate"]
         return SceneSpec(
             objects,
             tuple(self.params.get("plate_xy", [0.14, 0.13])),
@@ -75,15 +81,23 @@ class PlaceInPlate(ManipulationTask):
             plate_corner_radius=self.params.get("plate_corner_radius", 0.012),
             plate_base_thickness=self.params.get("plate_base_thickness", 0.002),
             plate_wall_thickness=self.params.get("plate_wall_thickness", 0.002),
-            plate_rim_height=self.params.get("plate_rim_height", 0.006),
+            plate_rim_height=self.params.get("plate_rim_height", 0.010),
+            plate_mass=self.params.get("plate_mass", 0.050),
+            plate_movable=self.params.get("plate_movable", True),
         )
 
     def evaluate(self, env) -> TaskStatus:
         target = self.params["target"]
-        inside = env.in_plate(target, fully=True) and env.contact_bodies(target, "plate")
+        if env.data.body("plate").xpos[2] < -0.04:
+            return TaskStatus(failure="plate_fell")
+        inside = env.in_plate(
+            target, fully=True, edge_tolerance=self.params.get("plate_edge_tolerance", 0.0)
+        ) and env.contact_bodies(target, "plate")
         wrong = [n for n in env.object_sizes if n != target and env.in_plate(n, fully=False)]
         return self.finish(
-            env, inside and not wrong, {"target_in_plate": bool(inside), "wrong_in_plate": wrong}
+            env,
+            inside and not wrong,
+            {"target_in_plate": bool(inside), "wrong_in_plate": wrong},
         )
 
 

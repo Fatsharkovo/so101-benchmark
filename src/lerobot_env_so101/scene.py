@@ -29,6 +29,8 @@ def look_at(position, target) -> str:
 def add_plate(world: ET.Element, asset: ET.Element, spec: SceneSpec, plate_xy: np.ndarray) -> None:
     """Build a thin light-blue plate with a rounded boundary shared by scoring."""
     plate = ET.SubElement(world, "body", name="plate", pos=numbers([*plate_xy, 0]))
+    if spec.plate_movable:
+        ET.SubElement(plate, "freejoint", name="plate_joint")
     half, radius = spec.plate_radius, spec.plate_corner_radius
     base = spec.plate_base_thickness
     wall = spec.plate_wall_thickness
@@ -39,6 +41,7 @@ def add_plate(world: ET.Element, asset: ET.Element, spec: SceneSpec, plate_xy: n
             plate,
             "geom",
             name=name,
+            mass=str(0.8 * spec.plate_mass),
             type=kind,
             size=numbers(size),
             pos=numbers([*xy, base / 2]),
@@ -61,18 +64,49 @@ def add_plate(world: ET.Element, asset: ET.Element, spec: SceneSpec, plate_xy: n
             boundary.extend(center + radial * (radius - wall / 2))
             outline.extend(center + radial * radius)
         boundary = np.asarray(boundary)
-        # A single convex base avoids overlapping contact surfaces and coplanar rendering flicker.
+        # One visual mesh avoids coplanar rendering flicker and defines the scoring outline.
         vertices = [[*point, z] for z in (0, base) for point in outline]
         ET.SubElement(asset, "mesh", name="plate_base_mesh", vertex=numbers(np.ravel(vertices)))
         ET.SubElement(
             plate,
             "geom",
             name="plate_bottom",
+            mass=str(0.8 * spec.plate_mass),
             type="mesh",
             mesh="plate_base_mesh",
+            contype="0",
+            conaffinity="0",
             rgba="0.48 0.76 0.9 1",
             friction="0.8 0.005 0.0001",
         )
+        # Primitive contacts support a thin moving plate stably. A single thin mesh
+        # produces fluctuating contact points against the tabletop in MuJoCo.
+        # Their union matches the rounded square; mass/inertia come from the mesh.
+        for i, size in enumerate(((half, inset, base / 2), (inset, half, base / 2))):
+            ET.SubElement(
+                plate,
+                "geom",
+                name=f"plate_base_box_{i}",
+                type="box",
+                size=numbers(size),
+                pos=numbers([0, 0, base / 2]),
+                mass="0",
+                rgba="0 0 0 0",
+                friction="0.8 0.005 0.0001",
+            )
+        for i, (sx, sy) in enumerate(((1, 1), (-1, 1), (-1, -1), (1, -1))):
+            ET.SubElement(
+                plate,
+                "geom",
+                name=f"plate_base_corner_{i}",
+                type="cylinder",
+                size=numbers([radius, base / 2]),
+                pos=numbers([sx * inset, sy * inset, base / 2]),
+                mass="0",
+                rgba="0 0 0 0",
+                friction="0.8 0.005 0.0001",
+            )
+    lengths = np.linalg.norm(np.roll(boundary, -1, axis=0) - boundary, axis=1)
     for i, start in enumerate(boundary):
         end = boundary[(i + 1) % len(boundary)]
         delta = end - start
@@ -81,6 +115,7 @@ def add_plate(world: ET.Element, asset: ET.Element, spec: SceneSpec, plate_xy: n
             "geom",
             type="box",
             name=f"plate_rim_{i}",
+            mass=str(0.2 * spec.plate_mass * lengths[i] / lengths.sum()),
             pos=numbers([*((start + end) / 2), base + rim_height / 2]),
             size=numbers([np.linalg.norm(delta) / 2 + 0.00005, wall / 2, rim_height / 2]),
             euler=f"0 0 {math.atan2(delta[1], delta[0])}",
@@ -120,6 +155,11 @@ def _base_xml(spec: SceneSpec, cfg: SimConfig) -> ET.Element:
     visual = root.find("visual")
     if visual is None:
         visual = ET.SubElement(root, "visual")
+    # Cover the full spotlight plus margin instead of clipping shadows at its default 0.6 scale.
+    visual_map = visual.find("map")
+    if visual_map is None:
+        visual_map = ET.SubElement(visual, "map")
+    visual_map.set("shadowscale", "1.1")
     ET.SubElement(visual, "global", offwidth=str(cfg.width), offheight=str(cfg.height))
     ET.SubElement(visual, "headlight", ambient="0.35 0.35 0.35", diffuse="0.6 0.6 0.6")
     asset = root.find("asset")

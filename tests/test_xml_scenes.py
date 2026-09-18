@@ -68,6 +68,7 @@ def test_replay_uses_captured_scene(tmp_path):
 def test_xml_plate_height_and_rotation_are_preserved(tmp_path):
     root = read_xml(Path(task_scenes.__file__).parent / "place_red_in_plate.xml")
     plate = root.find("worldbody/body[@name='plate']")
+    plate.remove(plate.find("freejoint"))
     plate.set("pos", "0.14 0.13 0.01")
     plate.set("euler", "0 0 0.3")
     path = tmp_path / "raised_plate.xml"

@@ -4,6 +4,8 @@
   </option>
   <compiler angle="radian" meshdir="../src/lerobot_env_so101/assets/so101/assets" texturedir="../src/lerobot_env_so101/assets/so101/assets" autolimits="true" />
   <visual>
+    <!-- Cover the full 90-degree spotlight plus margin; the default 0.6 clips shadows. -->
+    <map shadowscale="1.1" />
     <scale contactwidth="0.1" contactheight="0.05" forcewidth="0.02" framelength="0.75" framewidth="0.025" camera="0.2" />
     <global offwidth="640" offheight="480" />
     <headlight ambient="0.35 0.35 0.35" diffuse="0.6 0.6 0.6" />
