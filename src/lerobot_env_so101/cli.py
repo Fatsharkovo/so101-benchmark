@@ -14,6 +14,7 @@ def main():
     parser.add_argument("command", choices=["list", "preview", "eval", "replay", "camera-tune"])
     parser.add_argument("--config")
     parser.add_argument("--task", help="Comma-separated task ids, or all")
+    parser.add_argument("--group-by-family", action="store_true", help="Group list output by task family")
     parser.add_argument("--episodes", type=int)
     parser.add_argument("--seed", type=int)
     parser.add_argument("--mode", choices=["sync", "realtime"])
@@ -38,8 +39,16 @@ def main():
 
         run_camera_tuner(cfg)
     elif args.command == "list":
-        for task_id, definition in discover(cfg.task_paths).items():
-            print(f"{task_id}: {definition['instruction']}")
+        registry = discover(cfg.task_paths)
+        if args.group_by_family:
+            for family in sorted({d.get("family", "custom") for d in registry.values()}):
+                print(f"{family}:")
+                for task_id, definition in registry.items():
+                    if definition.get("family", "custom") == family:
+                        print(f"  {task_id}: {definition['instruction']}")
+        else:
+            for task_id, definition in registry.items():
+                print(f"{task_id}: {definition['instruction']}")
     elif args.command == "eval":
         from .runner import run
 

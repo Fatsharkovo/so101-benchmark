@@ -1,9 +1,0 @@
-id: stack_blue_on_red
-class: lerobot_env_so101.tasks.manipulation:StackBlueOnRed
-instruction: Pick up the blue cube and place it on top of the red cube.
-params:
-  target: blue
-  base: red
-  stable_seconds: 1.0
-
-scene: stack_blue_on_red.xml

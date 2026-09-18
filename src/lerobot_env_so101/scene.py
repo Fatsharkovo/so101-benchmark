@@ -126,134 +126,13 @@ def add_plate(world: ET.Element, asset: ET.Element, spec: SceneSpec, plate_xy: n
 def _base_xml(spec: SceneSpec, cfg: SimConfig) -> ET.Element:
     import task_scenes
 
-    root = ET.parse(ASSET_DIR / "so101.xml").getroot()
-    root.find("compiler").set("meshdir", str(ASSET_DIR / "assets"))
-    root.find("compiler").set("texturedir", str(ASSET_DIR / "assets"))
-    for material in root.findall("asset/material"):
-        if not material.get("name", "").startswith("sts3215_"):
-            material.attrib.update(rgba="0.92 0.92 0.92 1", specular="0.1", shininess="0.1")
-    # Share the editable wrist attachment with XML scenes; retain upstream robot assets.
-    mount_parent = root.find(".//body[@name='camera_mount']/..")
-    mount_parent.remove(mount_parent.find("body[@name='camera_mount']"))
-    attachment = ET.parse(Path(task_scenes.__file__).parent / "wrist_camera.xml").getroot()
-    mount_parent.append(attachment.find("body"))
-    root.find("asset/mesh[@file='wrist_roll_follower_so101_camera_mount.stl']").set(
-        "file", "seeed_wrist_camera_mount.stl"
-    )
-    # Servo 2 housing/mount belongs to shoulder; upper_arm is its driven link.
-    # Priority + condim=1 prevents the opposing geom from restoring contact friction.
-    shoulder = root.find(".//body[@name='shoulder']")
-    for geom, name in zip(
-        shoulder.findall("geom[@class='collision']"),
-        ("second_servo_housing", "second_servo_mount"),
-        strict=True,
-    ):
-        geom.attrib.update(name=name, friction="0 0 0", condim="1", priority="2")
+    from .xml_scene import read_xml
+
+    root = read_xml(Path(task_scenes.__file__).parent / "common.xml")
     root.find("option").set("timestep", str(1 / cfg.physics_hz))
-    root.find("option").set("iterations", "50")
-    ET.SubElement(root.find("option"), "flag", multiccd="enable")
-    visual = root.find("visual")
-    if visual is None:
-        visual = ET.SubElement(root, "visual")
-    # Cover the full spotlight plus margin instead of clipping shadows at its default 0.6 scale.
-    visual_map = visual.find("map")
-    if visual_map is None:
-        visual_map = ET.SubElement(visual, "map")
-    visual_map.set("shadowscale", "1.1")
-    ET.SubElement(visual, "global", offwidth=str(cfg.width), offheight=str(cfg.height))
-    ET.SubElement(visual, "headlight", ambient="0.35 0.35 0.35", diffuse="0.6 0.6 0.6")
-    asset = root.find("asset")
-    ET.SubElement(asset, "texture", name="table_wood", type="2d", file="Wood049_1K_Color_Rotated90.png")
-    ET.SubElement(
-        asset,
-        "material",
-        name="table_wood_material",
-        texture="table_wood",
-        texrepeat="1 1",
-        texuniform="false",
-        rgba="1 1 1 1",
-        specular="0.1",
-        shininess="0.1",
-        reflectance="0",
-    )
-    ET.SubElement(
-        asset,
-        "texture",
-        name="daylight",
-        type="skybox",
-        builtin="gradient",
-        rgb1="0.55 0.72 0.88",
-        rgb2="0.92 0.95 0.98",
-        width="512",
-        height="3072",
-    )
-    ET.SubElement(
-        asset,
-        "texture",
-        name="ground_grid",
-        type="2d",
-        builtin="checker",
-        rgb1="0.72 0.75 0.78",
-        rgb2="0.79 0.82 0.85",
-        width="512",
-        height="512",
-    )
-    ET.SubElement(
-        asset,
-        "material",
-        name="ground_material",
-        texture="ground_grid",
-        texrepeat="2 2",
-        texuniform="true",
-        reflectance="0",
-    )
-    world = root.find("worldbody")
-    # Infinite visual ground below the tabletop. Falling objects still cross the failure threshold.
-    ET.SubElement(
-        world,
-        "geom",
-        name="ground",
-        type="plane",
-        pos="0 0 -0.08",
-        size="0 0 0.01",
-        material="ground_material",
-        contype="0",
-        conaffinity="0",
-    )
+    root.find("visual/global").attrib.update(offwidth=str(cfg.width), offheight=str(cfg.height))
     for item in ET.fromstring(f"<root>{spec.assets_xml}</root>"):
         root.find("asset").append(item)
-    # Named camera target is stable across tasks.
-    ET.SubElement(world, "light", name="key_light", pos="0.2 -0.3 0.9", dir="0 0 -1", diffuse="0.8 0.8 0.8")
-    table = ET.SubElement(world, "body", name="table", pos="0.1 0 -0.025")
-    ET.SubElement(
-        table,
-        "geom",
-        name="table_top",
-        type="box",
-        size="0.42 0.38 0.025",
-        material="table_wood_material",
-        rgba="1 1 1 1",
-        friction="0.8 0.005 0.0001",
-    )
-    for name, pos in (("front", (0.45, 0, 0.35)), ("overview", (0.60, -0.65, 0.65))):
-        camera_cfg = cfg.cameras.get(name, {})
-        position = camera_cfg.get("position", pos)
-        # Front optical axis points down 60 degrees from the horizontal.
-        target = camera_cfg.get(
-            "target", (0.45 - 0.35 / math.sqrt(3), 0, 0) if name == "front" else (0.16, 0, 0.06)
-        )
-        ET.SubElement(
-            world,
-            "camera",
-            name=name,
-            pos=numbers(position),
-            xyaxes=look_at(position, target),
-            fovy=str(camera_cfg.get("fovy", 45 if name == "front" else 48)),
-        )
-    wrist = root.find(".//camera[@name='wrist']")
-    for attr in ("resolution", "sensorsize", "focal"):
-        wrist.attrib.pop(attr, None)
-    wrist.set("fovy", str(cfg.cameras.get("wrist", {}).get("fovy", 65)))
     return root
 
 

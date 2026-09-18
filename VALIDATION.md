@@ -1,5 +1,26 @@
 # 验证记录
 
+## 共享场景与任务大类重构（2026-09-18）
+
+- 完整回归：`env -u PYTHONPATH MUJOCO_GL=egl
+  SO101_DATASET_PYTHON=/home/fatshark/anaconda3/envs/soarm101/bin/python
+  uv run --no-sync pytest tests -q`，**130 passed、6 skipped**。
+  跳过项为桌面 GUI 与可选依赖；未连接实体电机或实体相机。
+- 十任务在目标插值开启/关闭下均完成脚本接触操作，20/20 通过。
+- 同 seed 的五色入盘任务生成相同模型、初始状态和采样布局；蓝放红/红放蓝也完全一致。
+  不同 seed 仍产生不同布局；五项叠块始终只包含指定两块。
+- 用主分支原六份 XML 对比共享模板：seed 0、17 的采样布局、初始 qpos、质量、惯量、
+  碰撞尺寸/摩擦、颜色、关节范围、控制增益及相机位置/朝向均一致。
+- 外部大类 YAML 新增黄放红任务即可完成脚本执行；相对 XML 路径、公共参数继承、
+  子任务覆盖、配置实例隔离、旧式 YAML、旧类名、旧内置 XML 名称及 YAML 锚点通过。
+- 重复任务 ID、缺少槽位/模板参数、非法颜色、同色叠放均有明确错误。分组 list 及
+  默认列表格式通过；绿放黄完整模拟采集验证帧指令、展开参数、family 和完整 XML 元数据。
+- 保存场景回放绕过当前模板，保留物体顺序和自由关节地址；现有视频回放、R/Space、
+  相机配置、零外壳摩擦、运动插值、可移动盘子等回归通过。
+- 清理本地旧 build 缓存后构建 wheel；确认只有两份大类 YAML、两个任务 XML 和
+  common/wrist_camera XML。解压到独立临时目录并使用隔离导入，十任务均可加载。
+- Ruff、pre-commit 与 git diff --check 通过；my_scripts 继续被 Git 忽略。
+
 ## 阴影边界修复（2026-09-18）
 
 - 复现伸臂姿态下阴影被直线截断：MuJoCo 默认 shadowscale=0.6，主灯 cutoff=45°，

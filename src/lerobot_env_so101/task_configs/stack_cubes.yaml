@@ -1,0 +1,28 @@
+family: stack_cubes
+class: lerobot_env_so101.tasks.manipulation:StackCubes
+scene: stack_cubes.xml
+instruction_template: Pick up the {target} cube and place it on top of the {base}
+  cube.
+params:
+  stable_seconds: 1.0
+tasks:
+  stack_blue_on_red:
+    params:
+      target: blue
+      base: red
+  stack_orange_on_green:
+    params:
+      target: orange
+      base: green
+  stack_red_on_blue:
+    params:
+      target: red
+      base: blue
+  stack_green_on_yellow:
+    params:
+      target: green
+      base: yellow
+  stack_yellow_on_blue:
+    params:
+      target: yellow
+      base: blue

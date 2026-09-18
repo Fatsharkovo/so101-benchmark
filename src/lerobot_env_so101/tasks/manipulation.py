@@ -5,17 +5,41 @@ import math
 import numpy as np
 
 from ..config import COLORS
-from .base import ObjectSpec, SceneSpec, Task, TaskStatus
+from .base import Task, TaskStatus
 
 
 class ManipulationTask(Task):
     def __init__(self, definition):
         super().__init__(definition)
+        if type(self).scene is Task.scene:
+            self.definition.setdefault("scene", self.default_scene)
+        for role in self.object_roles:
+            if self.params.get(role) not in COLORS:
+                raise ValueError(f"{role} must name a supported color")
+        if len({self.params[role] for role in self.object_roles}) != len(self.object_roles):
+            raise ValueError("Target and base must be different objects")
+        if "colors" in self.params:
+            colors = self.params["colors"]
+            if (
+                not isinstance(colors, list)
+                or any(c not in COLORS for c in colors)
+                or len(colors) != len(set(colors))
+                or any(self.params[r] not in colors for r in self.object_roles)
+            ):
+                raise ValueError("Task colors must be unique supported colors and include task objects")
         for key, default in (("stable_seconds", 1), ("linear_speed", 0.01), ("angular_speed", 0.1)):
             if self.params.get(key, default) <= 0:
                 raise ValueError(f"Task threshold {key} must be positive")
 
     def reset(self, env) -> None:
+        required = {self.params[role] for role in self.object_roles}
+        if missing := required - env.object_sizes.keys():
+            raise ValueError(f"Task {self.id}: missing scene objects {sorted(missing)}")
+        if "plate" in self.stable_scene_objects and env.scene_spec.plate_xy is None:
+            raise ValueError(f"Task {self.id}: scene requires a plate")
+        self.stable_objects = [self.params[role] for role in self.object_roles] + list(
+            self.stable_scene_objects
+        )
         self.stable_steps = 0
         self.lifted = False
         self.grasped = False
@@ -49,42 +73,15 @@ class ManipulationTask(Task):
 
 
 class PlaceInPlate(ManipulationTask):
+    default_scene = "place_in_plate.xml"
+    object_roles = ("target",)
+    stable_scene_objects = ("plate",)
+
     def __init__(self, definition):
         super().__init__(definition)
         tolerance = self.params.get("plate_edge_tolerance", 0.0)
         if not np.isfinite(tolerance) or not 0 <= tolerance <= 0.005:
             raise ValueError("plate_edge_tolerance must be between 0 and 0.005 metres")
-
-    def scene(self) -> SceneSpec:
-        positions = [(0.14, -0.10), (0.20, -0.105), (0.235, -0.05), (0.15, -0.035), (0.21, 0.015)]
-        positions = dict(zip(COLORS, positions, strict=True))
-        positions.update(self.params.get("positions", {}))
-        names = self.params.get("colors", list(COLORS))
-        if self.params["target"] not in names or set(names) - COLORS.keys() or len(names) != len(set(names)):
-            raise ValueError("Task colors must be unique supported colors and include the target")
-        objects = [
-            ObjectSpec(
-                name,
-                COLORS[name],
-                (*positions[name], 0.014),
-                self.params.get("cube_size", 0.025),
-                self.params.get("cube_mass", 0.010),
-            )
-            for name in names
-        ]
-        self.stable_objects = [self.params["target"], "plate"]
-        return SceneSpec(
-            objects,
-            tuple(self.params.get("plate_xy", [0.14, 0.13])),
-            self.params.get("plate_radius", 0.050),
-            plate_shape=self.params.get("plate_shape", "rounded_square"),
-            plate_corner_radius=self.params.get("plate_corner_radius", 0.012),
-            plate_base_thickness=self.params.get("plate_base_thickness", 0.002),
-            plate_wall_thickness=self.params.get("plate_wall_thickness", 0.002),
-            plate_rim_height=self.params.get("plate_rim_height", 0.010),
-            plate_mass=self.params.get("plate_mass", 0.050),
-            plate_movable=self.params.get("plate_movable", True),
-        )
 
     def evaluate(self, env) -> TaskStatus:
         target = self.params["target"]
@@ -101,23 +98,10 @@ class PlaceInPlate(ManipulationTask):
         )
 
 
-class StackBlueOnRed(ManipulationTask):
-    def scene(self) -> SceneSpec:
-        self.stable_objects = [self.params["target"], self.params["base"]]
-        positions = {"blue": (0.19, -0.045), "red": (0.19, 0.045)}
-        positions.update(self.params.get("positions", {}))
-        return SceneSpec(
-            [
-                ObjectSpec(
-                    name,
-                    COLORS[name],
-                    (*positions[name], 0.014),
-                    self.params.get("cube_size", 0.025),
-                    self.params.get("cube_mass", 0.010),
-                )
-                for name in ("blue", "red")
-            ]
-        )
+class StackCubes(ManipulationTask):
+    default_scene = "stack_cubes.xml"
+    object_roles = ("target", "base")
+    stable_scene_objects = ()
 
     def evaluate(self, env) -> TaskStatus:
         target, base = self.params["target"], self.params["base"]
@@ -137,3 +121,7 @@ class StackBlueOnRed(ManipulationTask):
         return self.finish(
             env, valid, {"aligned": bool(aligned), "height_error": float(top[2] - bottom[2] - expected)}
         )
+
+
+# Compatibility for external single-task YAML and saved task definitions.
+StackBlueOnRed = StackCubes

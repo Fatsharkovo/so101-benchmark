@@ -1,11 +1,11 @@
 # SO-101 仿真 Benchmark
 
-基于 MuJoCo 和 Gymnasium 的 SO-ARM101 仿真项目，提供六项桌面操作任务。可以连接真实
+基于 MuJoCo 和 Gymnasium 的 SO-ARM101 仿真项目，提供两个大类、十项桌面操作任务。可以连接真实
 SO-101 Leader 控制仿真机械臂、采集 LeRobot 数据集，也可以运行脚本基线和学习策略评测。
 
 本项目包含：
 
-- 六个可编辑的 XML 场景：五色方块入盘、蓝块叠放到红块上。
+- 两个可编辑的共享 XML 场景：五色方块入盘、双块叠放；每类任务共用判定逻辑。
 - Leader → 仿真遥操作，overview、front、wrist 三窗口同时显示。
 - 按空格开始采集，成功后保存 episode，并在原窗口中重置。
 - 独立 front 相机调参窗口，支持滑条、即时预览和本机参数保存。
@@ -131,7 +131,7 @@ env -u PYTHONPATH uv run --no-sync so101-bench preview \
 ### 运行脚本基线
 
 ```bash
-# 六项任务各跑一个 episode，不渲染图像、不保存视频
+# 十项任务各跑一个 episode，不渲染图像、不保存视频
 env -u PYTHONPATH uv run --no-sync so101-bench eval --config configs/smoke.yaml
 ```
 
@@ -335,6 +335,13 @@ R/Space 重置也恢复插值起点。数据集 `action` 仍记录当前周期�
 | `place_yellow_in_plate` | 黄块入盘 |
 | `place_orange_in_plate` | 橙块入盘 |
 | `stack_blue_on_red` | 将蓝块叠放到红块上 |
+| `stack_orange_on_green` | 将橙块叠放到绿块上 |
+| `stack_red_on_blue` | 将红块叠放到蓝块上 |
+| `stack_green_on_yellow` | 将绿块叠放到黄块上 |
+| `stack_yellow_on_blue` | 将黄块叠放到蓝块上 |
+
+`--task all` 包含上述十个任务，遥操作仍在启动时选择一个子任务。
+`so101-bench list --group-by-family` 可按大类列出任务；原有 `--task` 命令和任务 ID 不变。
 
 五色任务在相同 seed 下使用相同布局，仅目标颜色不同。目标必须有机械臂接触和离桌抬升
 记录；入盘要求目标在盘沿内（允许下述边缘误差）、由盘面支撑，其他方块不占盘内区域。
@@ -343,7 +350,7 @@ R/Space 重置也恢复插值起点。数据集 `action` 仍记录当前周期�
 盘沿允许 2 mm 边缘误差。允许轻触盘沿，但目标方块仍需松开且受盘底支撑；悬空、
 骑在盘沿或其他颜色占盘内仍不算成功。叠块任务判定不变。
 
-叠放要求蓝块由红块支撑、红块留在桌上且两块直立；默认横向偏差小于较小方块边长的 30%，
+叠放要求目标块由指定底座块支撑、底座块留在桌上且两块直立；默认横向偏差小于较小方块边长的 30%，
 高度误差小于 4 mm。成功时机械臂须释放所有方块，目标连续稳定 1 秒（线速度低于
 0.01 m/s、角速度低于 0.1 rad/s）。跌落和超时判为失败，默认不要求机械臂回到初始姿态。
 
@@ -358,9 +365,11 @@ R/Space 重置也恢复插值起点。数据集 `action` 仍记录当前周期�
 | 布局随机化 | 遥操作位置每轴 ±15 mm，方块朝向 ±8°；普通默认 ±5 mm / ±5°；`fixed.yaml` 关闭 |
 
 场景使用明亮天空和无限视觉地面；外围地面不参与碰撞，实际操作区域仍是桌面。
-叠放两块位于基座前方约 19 cm，左右各 4.5 cm。
+叠放只出现所选两块，两个初始区域位于基座前方约 19 cm、左右各 4.5 cm，再按运行配置随机偏移。
+颜色 ID 按字母序分配区域，与抓取角色无关；相同 seed 下“蓝放红”和“红放蓝”的位置、
+朝向完全一致，只有目标和底座角色不同。不同 seed 仍产生不同布局。
 
-六场景桌面统一使用 [ambientCG Wood049](https://ambientcg.com/a/Wood049) 橡木颜色贴图
+共享场景桌面统一使用 [ambientCG Wood049](https://ambientcg.com/a/Wood049) 橡木颜色贴图
 （CC0-1.0，1024×1024，顺时针旋转 90°，随安装包提供）。机械臂打印件及腕部支架采用略带灰色的白色
 `rgba="0.92 0.92 0.92 1"`，舵机保持深色；外观设置不改变碰撞、质量或摩擦。
 贴图来源和校验值见
@@ -386,7 +395,7 @@ env -u PYTHONPATH uv run --no-sync so101-bench eval \
 | `configs/teleop.yaml` | 遥操作默认配置，小范围随机布局、开启目标插值 |
 | `configs/fixed.yaml` | 固定布局，旧阶跃控制，适合对比调试 |
 | `configs/smoke.yaml` | 无图像、无视频的脚本检查 |
-| `configs/benchmark.yaml` | 六任务评测和随机化参数示例 |
+| `configs/benchmark.yaml` | 十任务评测和随机化参数示例 |
 | `configs/pi05_local.yaml` | π0.5 本地推理示例 |
 | `configs/pi05_remote.yaml` | π0.5 远程推理示例 |
 | `configs/pi0_local.yaml`、`configs/smolvla_local.yaml` | 其他本地策略示例 |
@@ -469,10 +478,11 @@ so101-benchmark/
 ├── task_scenes/                     # 可直接编辑的 MJCF XML
 │   ├── common.xml                   # 机械臂、桌面、天空、灯光、front
 │   ├── wrist_camera.xml             # 腕部支架、碰撞体、wrist
-│   └── <任务 ID>.xml                # 方块、盘子等任务物体
+│   ├── place_in_plate.xml           # 五色方块＋盘子，共用场景
+│   └── stack_cubes.xml              # 两个中性方块槽位，按子任务绑定颜色
 ├── src/lerobot_env_so101/
 │   ├── assets/so101/                # 机器人网格、上游 XML、来源记录
-│   ├── task_configs/                # 任务 ID、指令、类和参数
+│   ├── task_configs/                # 两份大类 YAML：共享规则与子任务列表
 │   ├── tasks/                      # 成功判定与任务逻辑
 │   ├── camera_tuner.py              # 相机调参窗口
 │   └── teleop.py                    # 采集状态与数据写入协调
@@ -485,18 +495,60 @@ so101-benchmark/
 显式任务参数和运行配置 → 启用的随机化；遥操作还会在启动时应用个人 front 参数，并固定该相机。
 
 XML 在内存中展开 include 后加载，不改写源文件。编辑后重新启动环境生效，当前窗口的
-R/Space 不会重新读取 XML。可以用 MuJoCo 直接加载六个任务 XML；它们和网格也随 wheel 分发。
+R/Space 不会重新读取 XML。两个共享 XML 都可直接由 MuJoCo 加载；叠块模板直接打开时显示
+两个中性色槽位，通过本项目按任务加载后绑定颜色。共享 XML、YAML 和网格随 wheel 分发。
+旧的六个任务 XML 文件已移除；本项目加载器兼容旧内置文件名，外部工具直接加载时请改用新路径。
+历史回放直接加载已保存的完整场景，不会重新绑定槽位。
 
 随机化分 `layout`、`appearance`、`camera`、`size`、`physics` 五组，默认只开启布局组。
 更改范围后应复查可达性。相机可通过 `sim.cameras.<名称>` 指定 `position`/`pos`、`quat`、
 `target` 或 `euler`、`fovy`；位置单位为米，Euler 角为弧度，fovy 为度，四元数顺序为 wxyz。
 front 为世界坐标，wrist 为所属机械臂部件的局部坐标。使用 `fixed: true` 可排除该相机随机化。
 
-扩展任务时在 `task_paths` 指定的目录中新增任务 YAML，包含唯一 `id`、`class`、
-`instruction` 和 `params`；路径相对运行 YAML 解析。可复用现有 `PlaceInPlate`/`StackBlueOnRed` 类，
-新增行为则继承 `Task` 并实现 `scene()`、`evaluate(env)`，按需实现 `reset(env)` 和
-`make_oracle(env)`。参照 [`task_configs`](src/lerobot_env_so101/task_configs) 和
-[`tasks`](src/lerobot_env_so101/tasks)。评分依赖约定的物体/盘子结构，任意新几何不等于自动支持新评分规则。
+### 7.1 添加同类任务
+
+`task_configs/place_in_plate.yaml` 和 `task_configs/stack_cubes.yaml` 各维护一个大类：
+场景负责物体与初始区域，判定类负责通用规则，子任务只填写目标等差异。例如叠块配置：
+
+```yaml
+family: stack_cubes
+class: lerobot_env_so101.tasks.manipulation:StackCubes
+scene: stack_cubes.xml
+instruction_template: "Pick up the {target} cube and place it on top of the {base} cube."
+params:
+  stable_seconds: 1.0
+tasks:
+  stack_blue_on_red:
+    params: {target: blue, base: red}
+  stack_green_on_yellow:
+    params: {target: green, base: yellow}
+```
+
+要新增“绿放红”，只需在同一文件的 `tasks` 下加入：
+
+```yaml
+  stack_green_on_red:
+    params: {target: green, base: red}
+```
+
+无需新增 XML 或 Python。子任务继承公共 `params`，可覆盖某个参数或使用 `instruction`
+显式指定指令；不允许在子任务中覆盖场景和判定类。需要不同场景时新建大类。
+修改配置后重启环境生效；已有会话不会自动切换任务。未知颜色、同色叠放、重复 ID 和
+指令模板缺少参数会报告错误。录制元数据保存大类、任务 ID、合并后的参数、实际指令和完整 XML。
+
+### 7.2 外部任务与自定义行为
+
+在运行配置的 `task_paths` 中指定外部目录（路径相对运行 YAML），可放置相同格式的大类 YAML。
+`scene` 优先相对该任务 YAML 解析，其次查找内置场景；目录中任务 ID 必须全局唯一。
+旧版单任务 `id`、`class`、`instruction`、`params`、可选 `scene` 格式仍支持；
+`StackBlueOnRed` 保留为 `StackCubes` 的兼容别名。
+
+新增行为继承 `Task`，提供共享 XML 并实现 `evaluate(env)`，按需实现 `reset(env)` 和
+`make_oracle(env)`；纯 Python 自定义场景仍可覆盖 `scene()` 返回 `SceneSpec`。
+内置任务的 `scene()` 从 XML 读取几何，Python 场景也复用 `common.xml`，不再维护第二套默认环境。
+场景构造不负责初始化计分，计分状态在 `reset()` 中重置。
+参照 [`task_configs`](src/lerobot_env_so101/task_configs) 和 [`tasks`](src/lerobot_env_so101/tasks)。
+评分依赖约定的物体/盘子结构，任意新几何不等于自动支持新评分规则。
 盘底使用圆角网格显示，用透明的 box/cylinder 组合提供稳定接触；手改 XML 尺寸时需要
 同时调整显示网格和碰撞几何，或用任务参数 `plate_radius` / `plate_corner_radius` 等统一生成。
 `plate_mass`（kg）和 `plate_movable` 可通过任务参数覆盖。
