@@ -8,6 +8,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 from .config import SimConfig
+from .layout import sample_workspace
 from .tasks.base import SceneSpec
 
 ASSET_DIR = Path(__file__).resolve().parent / "assets/so101"
@@ -164,38 +165,41 @@ def make_xml(
     }
     layout = cfg.randomization.get("layout", {})
     rng = streams["layout"]
-    for attempt in range(200):
-        positions = {}
-        for obj in spec.objects:
-            p = np.array(obj.position, dtype=float)
-            if layout.get("enabled", False):
-                p[:2] += rng.uniform(
+    if layout.get("enabled", False) and layout.get("mode", "jitter") == "workspace":
+        positions, plate_xy = sample_workspace(spec, sizes, rng)
+    else:
+        for attempt in range(200):
+            positions = {}
+            for obj in spec.objects:
+                p = np.array(obj.position, dtype=float)
+                if layout.get("enabled", False):
+                    p[:2] += rng.uniform(
+                        -layout.get("position_jitter", 0.005), layout.get("position_jitter", 0.005), 2
+                    )
+                p[2] += (sizes[obj.name] - obj.size) / 2
+                positions[obj.name] = p
+            plate_xy = np.array(spec.plate_xy) if spec.plate_xy is not None else None
+            if plate_xy is not None and layout.get("enabled", False):
+                plate_xy += rng.uniform(
                     -layout.get("position_jitter", 0.005), layout.get("position_jitter", 0.005), 2
                 )
-            p[2] += (sizes[obj.name] - obj.size) / 2
-            positions[obj.name] = p
-        plate_xy = np.array(spec.plate_xy) if spec.plate_xy is not None else None
-        if plate_xy is not None and layout.get("enabled", False):
-            plate_xy += rng.uniform(
-                -layout.get("position_jitter", 0.005), layout.get("position_jitter", 0.005), 2
-            )
-        valid = all(0.10 < np.linalg.norm(p[:2]) < 0.31 for p in positions.values())
-        if plate_xy is not None:
-            valid &= 0.13 < np.linalg.norm(plate_xy) < 0.29
-        for i, a in enumerate(spec.objects):
-            for b in spec.objects[i + 1 :]:
-                valid &= (
-                    np.linalg.norm(positions[a.name][:2] - positions[b.name][:2])
-                    > (sizes[a.name] + sizes[b.name]) / 2 + 0.025
-                )
+            valid = all(0.10 < np.linalg.norm(p[:2]) < 0.31 for p in positions.values())
             if plate_xy is not None:
-                valid &= spec.plate_distance(positions[a.name][:2] - plate_xy) > sizes[a.name] + 0.01
-        if valid:
-            break
-    else:
-        raise ValueError(
-            "Cannot sample collision-free reachable layout within 200 attempts; reduce randomization"
-        )
+                valid &= 0.13 < np.linalg.norm(plate_xy) < 0.29
+            for i, a in enumerate(spec.objects):
+                for b in spec.objects[i + 1 :]:
+                    valid &= (
+                        np.linalg.norm(positions[a.name][:2] - positions[b.name][:2])
+                        > (sizes[a.name] + sizes[b.name]) / 2 + 0.025
+                    )
+                if plate_xy is not None:
+                    valid &= spec.plate_distance(positions[a.name][:2] - plate_xy) > sizes[a.name] + 0.01
+            if valid:
+                break
+        else:
+            raise ValueError(
+                "Cannot sample collision-free reachable layout within 200 attempts; reduce randomization"
+            )
     for obj in spec.objects:
         yaw = rng.uniform(*layout.get("yaw_deg", [-5, 5])) if layout.get("enabled", False) else 0
         size = sizes[obj.name]

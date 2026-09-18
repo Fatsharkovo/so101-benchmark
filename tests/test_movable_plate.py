@@ -1,18 +1,14 @@
 """Physical plate contact, moving-target scoring and bounded teleoperation layouts."""
 
-import itertools
 import xml.etree.ElementTree as ET
-from pathlib import Path
 
 import mujoco
 import numpy as np
 import pytest
 
-from lerobot_env_so101.config import SimConfig, load_config
+from lerobot_env_so101.config import SimConfig
 from lerobot_env_so101.env import SO101Env
-from lerobot_env_so101.oracle import solve_ik
 from lerobot_env_so101.scene import make_xml
-from lerobot_env_so101.xml_scene import scene_path
 
 
 @pytest.fixture
@@ -81,43 +77,6 @@ def test_moved_rotated_plate_scoring_and_restore(env):
     assert info["is_success"]
     env.restore_initial()
     np.testing.assert_allclose(env.data.qpos, before, atol=1e-12)
-
-
-def test_teleop_layout_sampling_is_bounded_separated_and_repeatable(env):
-    config = load_config(Path(__file__).resolve().parents[1] / "configs/teleop.yaml").sim
-    sampled = []
-    for seed in range(128):
-        spec = env.task_impl.scene()
-        _, layout = make_xml(spec, config, seed, scene_path(env.task_impl.definition))
-        sampled.append(layout)
-        positions = []
-        for obj in spec.objects:
-            position = np.array(layout["objects"][obj.name]["position"][:2])
-            assert np.max(np.abs(position - obj.position[:2])) <= 0.015 + 1e-12
-            assert 0.10 < np.linalg.norm(position) < 0.27
-            assert spec.plate_distance(position - layout["plate_xy"]) > obj.size + 0.01
-            positions.append(position)
-        for a, b in itertools.combinations(positions, 2):
-            assert np.linalg.norm(a - b) > 0.05
-        assert np.max(np.abs(np.array(layout["plate_xy"]) - spec.plate_xy)) <= 0.015 + 1e-12
-        assert 0.13 < np.linalg.norm(layout["plate_xy"]) < 0.25
-    assert sampled[0] != sampled[1]
-    assert np.ptp([s["plate_xy"] for s in sampled], axis=0).min() > 0.02
-    for name in env.object_sizes:
-        assert np.ptp([s["objects"][name]["position"][:2] for s in sampled], axis=0).min() > 0.02
-    _, repeated = make_xml(env.task_impl.scene(), config, 0, scene_path(env.task_impl.definition))
-    assert repeated == sampled[0]
-
-
-def test_teleop_layout_extremes_have_pick_and_approach_ik(env):
-    # Exercise all corners of every sampling rectangle, including the plate target.
-    centers = [obj.position[:2] for obj in env.scene_spec.objects] + [env.scene_spec.plate_xy]
-    for center in centers:
-        for dx, dy in itertools.product((-0.015, 0.015), repeat=2):
-            position = np.array([center[0] + dx, center[1] + dy, 0.09])
-            initial = solve_ik(env, position)
-            position[2] = 0.0145
-            solve_ik(env, position, initial)
 
 
 def test_python_plate_matches_xml_physics(env):

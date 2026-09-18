@@ -27,7 +27,7 @@ class SimConfig:
     height: int = 480
     render_backend: str = "osmesa"
     images: bool = True
-    home_degrees: list[float] = field(default_factory=lambda: [0, -70, 70, 60, 0, 70])
+    home_degrees: list[float] = field(default_factory=lambda: [0, -70, 70, 60, 0, 0])
     joint_signs: list[float] = field(default_factory=lambda: [1] * 5)
     # q_sim = radians((leader_degrees - offset) * sign); wrist zero faces forward.
     joint_offsets_deg: list[float] = field(default_factory=lambda: [0, 0, 0, 0, 90])
@@ -63,6 +63,8 @@ class SimConfig:
         allowed = set(SimConfig.__dataclass_fields__["randomization"].default_factory())
         if set(self.randomization) - allowed:
             raise ValueError("Unknown randomization group")
+        if self.randomization.get("layout", {}).get("mode", "jitter") not in ("jitter", "workspace"):
+            raise ValueError("layout.mode must be jitter or workspace")
         for group in self.randomization.values():
             for key, value in group.items():
                 if isinstance(value, list) and (len(value) != 2 or value[0] > value[1]):
