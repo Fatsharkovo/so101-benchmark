@@ -1,0 +1,25 @@
+family: place_in_plate
+class: lerobot_env_so101.tasks.manipulation:PlaceInPlate
+scene: place_in_plate.xml
+instruction_template: Pick up the {target} cube and place it in the plate.
+params:
+  stable_seconds: 0.5
+  linear_speed: 0.02
+  angular_speed: 0.3
+  plate_edge_tolerance: 0.002
+tasks:
+  place_red_in_plate:
+    params:
+      target: red
+  place_blue_in_plate:
+    params:
+      target: blue
+  place_green_in_plate:
+    params:
+      target: green
+  place_yellow_in_plate:
+    params:
+      target: yellow
+  place_orange_in_plate:
+    params:
+      target: orange

@@ -9,12 +9,12 @@ import task_scenes
 from lerobot_env_so101.config import SimConfig
 from lerobot_env_so101.env import SO101Env
 from lerobot_env_so101.tasks.base import discover
-from lerobot_env_so101.xml_scene import read_xml
+from lerobot_env_so101.xml_scene import read_xml, scene_path
 
 
 @pytest.mark.parametrize("task", list(discover()))
 def test_scene_source_compiles_directly(task):
-    path = Path(task_scenes.__file__).parent / f"{task}.xml"
+    path = scene_path(discover()[task])
     model = mujoco.MjModel.from_xml_path(str(path))
     assert model.camera("front").id >= 0
 

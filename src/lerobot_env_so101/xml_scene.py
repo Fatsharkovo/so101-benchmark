@@ -12,26 +12,41 @@ from .config import SimConfig
 from .tasks.base import ObjectSpec, SceneSpec
 
 
+def _legacy_scene_path(path: Path) -> Path:
+    """Resolve removed built-in file names without masking missing external files."""
+    import task_scenes
+
+    package = Path(task_scenes.__file__).parent.resolve()
+    if path.exists() or path.parent.resolve() != package:
+        return path
+    aliases = {
+        f"place_{color}_in_plate.xml": "place_in_plate.xml"
+        for color in ("red", "blue", "green", "yellow", "orange")
+    }
+    aliases["stack_blue_on_red.xml"] = "stack_cubes.xml"
+    return path.with_name(aliases.get(path.name, path.name))
+
+
 def scene_path(definition: dict) -> Path | None:
     value = definition.get("scene")
     if not value:
         return None
     path = Path(value)
     if path.is_absolute():
-        return path
-    local = Path(definition["source"]).parent / path
+        return _legacy_scene_path(path)
+    local = Path(definition.get("source", ".")).parent / path
     if local.exists():
         return local
     import task_scenes
 
-    return Path(task_scenes.__file__).parent / path
+    return _legacy_scene_path(Path(task_scenes.__file__).parent / path)
 
 
 def read_xml(path: Path) -> ET.Element:
     """Expand includes with paths resolved relative to the containing XML file."""
 
     def expand(source: Path, ancestors: set[Path]) -> ET.Element:
-        source = source.resolve()
+        source = _legacy_scene_path(source).resolve()
         if source in ancestors:
             raise ValueError(f"Recursive MJCF include: {source}")
         root = ET.parse(source).getroot()
@@ -142,10 +157,44 @@ def derive_spec(root: ET.Element, spec: SceneSpec) -> None:
     spec.__post_init__()
 
 
+def _bind_cube_slots(root: ET.Element, params: dict) -> None:
+    """Bind two neutral XML slots in color order, never in target/base order."""
+    from .config import COLORS
+    from .scene import numbers
+
+    world = root.find("worldbody")
+    slots = [world.find(f"body[@name='slot_{i}']") for i in range(2)]
+    if all(slot is None for slot in slots):
+        return  # Captured scenes and older external scenes already have named objects.
+    if any(slot is None for slot in slots):
+        raise ValueError("Two-cube template requires both slot_0 and slot_1")
+    colors = [params.get(role) for role in ("target", "base")]
+    if any(color not in COLORS for color in colors) or colors[0] == colors[1]:
+        raise ValueError("Two-cube template requires different supported target/base colors")
+    for slot, color in zip(slots, sorted(colors), strict=True):
+        old_name = slot.get("name")
+        geom = slot.find(f"geom[@name='{old_name}_geom']")
+        joint = slot.find("freejoint")
+        if geom is None or joint is None:
+            raise ValueError(f"Template {old_name} requires a named cube geom and freejoint")
+        slot.set("name", color)
+        joint.set("name", f"{color}_joint")
+        geom.attrib.update(name=f"{color}_geom", rgba=numbers([*COLORS[color], 1]))
+
+
 def load_scene(path: Path, spec: SceneSpec, params: dict, cfg: SimConfig) -> ET.Element:
+    """Instantiate a source while retaining its location in configuration errors."""
+    try:
+        return _load_scene(path, spec, params, cfg)
+    except (ValueError, KeyError, TypeError) as exc:
+        raise ValueError(f"Invalid scene {path}: {exc}") from exc
+
+
+def _load_scene(path: Path, spec: SceneSpec, params: dict, cfg: SimConfig) -> ET.Element:
     from .scene import add_plate, numbers
 
     root = read_xml(path)
+    _bind_cube_slots(root, params)
     derive_spec(root, spec)
     world = root.find("worldbody")
     if "colors" in params:

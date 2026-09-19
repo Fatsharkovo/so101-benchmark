@@ -9,7 +9,7 @@ from gymnasium import spaces
 
 from .config import JOINTS, SimConfig
 from .scene import make_xml
-from .tasks.base import make_task
+from .tasks.base import SceneSpec, Task, make_task
 from .xml_scene import derive_spec, read_xml, scene_path
 
 
@@ -57,7 +57,13 @@ class SO101Env(gym.Env):
 
         self.mj = mujoco
         self.close()
-        self.scene_spec = self.task_impl.scene()
+        source = scene_path(self.task_impl.definition)
+        # Saved XML is already instantiated; never rebind or require current scene sources.
+        self.scene_spec = (
+            SceneSpec([])
+            if type(self.task_impl).scene is Task.scene or (options and options.get("scene_xml"))
+            else self.task_impl.scene()
+        )
         if options and options.get("scene_xml"):
             root = read_xml(options["scene_xml"])
             derive_spec(root, self.scene_spec)
@@ -71,7 +77,7 @@ class SO101Env(gym.Env):
                 self.sampled["plate_xy"] = self.scene_spec.plate_xy
         else:
             self.model_xml, self.sampled = make_xml(
-                self.scene_spec, self.cfg, seed, scene_path(self.task_impl.definition), self.task_impl.params
+                self.scene_spec, self.cfg, seed, source, self.task_impl.params
             )
         self.model = mujoco.MjModel.from_xml_string(self.model_xml)
         self.data = mujoco.MjData(self.model)

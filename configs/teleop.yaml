@@ -5,7 +5,7 @@ video: true
 sim:
   interpolate_actions: true
   randomization:
-    layout: {enabled: true, position_jitter: 0.015, yaw_deg: [-8, 8]}
+    layout: {enabled: true, mode: workspace, yaw_deg: [-8, 8]}
 recording:
   repo_id: ""
   writer_python: ""

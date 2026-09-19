@@ -1,0 +1,13 @@
+<mujoco model="stack_cubes">
+  <include file="common.xml" />
+  <worldbody>
+    <body name="slot_0" pos="0.19 -0.045 0.013500000000000002" euler="0.0 0.0 0.0">
+      <freejoint name="slot_0_joint" />
+      <geom name="slot_0_geom" type="box" size="0.0125 0.0125 0.0125" rgba="0.6 0.6 0.6 1" mass="0.01" friction="1.0 0.005 0.0001" condim="4" solref="0.008 1" />
+    </body>
+    <body name="slot_1" pos="0.19 0.045 0.013500000000000002" euler="0.0 0.0 0.0">
+      <freejoint name="slot_1_joint" />
+      <geom name="slot_1_geom" type="box" size="0.0125 0.0125 0.0125" rgba="0.6 0.6 0.6 1" mass="0.01" friction="1.0 0.005 0.0001" condim="4" solref="0.008 1" />
+    </body>
+  </worldbody>
+</mujoco>
