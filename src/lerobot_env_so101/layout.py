@@ -18,7 +18,7 @@ def sample_workspace(
     the largest footprint; shuffle cubes to avoid a fixed color priority.
     """
 
-    def point(lateral_limit: float = 0.15) -> np.ndarray | None:
+    def point(lateral_limit: float = 0.13) -> np.ndarray | None:
         xy = rng.uniform([0.12, -lateral_limit], [0.27, lateral_limit])
         return xy if 0.19 <= np.linalg.norm(xy) <= 0.29 else None
 

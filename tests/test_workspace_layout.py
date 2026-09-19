@@ -44,7 +44,7 @@ def test_all_objects_cover_workspace_with_clearance_and_repeatable_seeds(task_id
                 assert spec.plate_distance(position - layout["plate_xy"]) >= radius + 0.025
             xy["plate"] = np.array(layout["plate_xy"])
         for name, position in xy.items():
-            lateral_limit = 0.18 if name == "plate" else 0.15
+            lateral_limit = 0.18 if name == "plate" else 0.13
             assert 0.12 <= position[0] <= 0.27
             assert -lateral_limit <= position[1] <= lateral_limit
             assert 0.19 <= np.linalg.norm(position) <= 0.29
@@ -59,9 +59,9 @@ def test_all_objects_cover_workspace_with_clearance_and_repeatable_seeds(task_id
         tracks.append([s["plate_xy"] for s in layouts])
     for track in tracks:
         points = np.asarray(track)
-        assert np.ptp(points[:, 0]) > 0.12
-        assert points[:, 1].min() < -0.14
-        assert points[:, 1].max() > 0.14
+        assert np.ptp(points[:, 0]) > 0.10
+        assert points[:, 1].min() < -0.12
+        assert points[:, 1].max() > 0.12
     _, repeated = make_xml(spec, cfg, 0, scene_path(task.definition), task.params)
     assert repeated == layouts[0]
 
